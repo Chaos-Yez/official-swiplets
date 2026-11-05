@@ -7,7 +7,7 @@ import type {
 import * as device from "@swipt/api/device";
 import * as input from "@swipt/api/input";
 import type { Rect } from "@swipt/api";
-import { waitForChange, waitForStable } from "@swipt/api/screen";
+import { waitForChange } from "@swipt/api/screen";
 import { defineAction, defineExtension, type Schema } from "@swipt/api/swiplet";
 
 import { readAccounts, type Account } from "./storage";
@@ -22,6 +22,10 @@ const sheetRetryMs = 800;
 // Measured on iOS 27.2 (24B115): an alert takes taps from 450 to 460 ms after the tap that presents it, however its
 // pixels move, and the sign-out button takes them 100 ms after the row tap, while its title still slides in.
 const alertPresentMs = 500;
+// Measured on iPadOS 27.3 (24C5037i): Settings lists its elements 400 ms after its launch returns, drops taps at up to
+// 500 ms, and took them all from 521 ms.
+const launchPresentMs = 550;
+const signOutMs = 5_000;
 
 type SwitchResult = "signedIn" | "needsAttention";
 
@@ -117,7 +121,13 @@ const first = (
   selector: AccessibilitySelector,
 ) => scope.findAll(selector)[0] ?? null;
 
+const primaryAccount = { identifier: "com.apple.settings.primaryAppleAccount" };
 const storeRow = { identifier: "STORE_SERVICE" };
+// Shows only while Media & Purchases is signed in.
+const subscriptionsRow = { identifier: "SUBSCRIPTIONS" };
+const faceIDCancel = {
+  identifier: "com.apple.localauthentication.ax.authentication.button.cancel",
+};
 const buttonSheet = { role: "sheet", has: { role: "button" } };
 
 // The iCloud password prompt is a secure field outside the sign-in form, under a navigation bar holding only its close
@@ -129,64 +139,42 @@ const passwordPrompt = (screen: AccessibilitySnapshot) => {
   ) {
     return null;
   }
-  const bar = screen
-    .findAll({ role: "navigationBar" })
-    .find((it) => !first(it, { identifier: "BackButton" }));
-  return bar ? first(bar, { role: "button" }) : null;
+  return first(screen, {
+    role: "button",
+    parent: {
+      role: "navigationBar",
+      not: { has: { identifier: "BackButton" } },
+    },
+  });
 };
 
-const accountPage = (screen: AccessibilitySnapshot) => {
-  const row = first(screen, storeRow);
-  return row && !first(row, { role: "activityIndicator" }) ? row : null;
-};
-
-// A sheet takes taps only once its presentation has ended, later than its last visible change.
-const tapPresented = async (
-  element: AccessibilityElement,
-  bounds: Screen,
-  signal: AbortSignal,
-) => {
-  if (element.frame !== undefined) {
-    const [x, y, width, height] = element.frame;
-    const left = Math.max(0, x);
-    const top = Math.max(0, y);
-    const region: Rect = [
-      left,
-      top,
-      Math.min(bounds.width, x + width) - left,
-      Math.min(bounds.height, y + height) - top,
-    ];
-    if (region[2] > 0 && region[3] > 0) {
-      await waitForStable({
-        region,
-        durationMs: 250,
-        timeoutMs: 1_500,
-        signal,
-      }).catch((error: Error) => {
-        if (error.name !== "TimeoutError") {
-          throw error;
-        }
-      });
-    }
+const ignoreTimeout = (error: Error) => {
+  if (error.name !== "TimeoutError") {
+    throw error;
   }
-  await accessibility.tap(element, { timeoutMs: tapTimeoutMs, signal });
 };
+
+const tapPresented = (element: AccessibilityElement, signal: AbortSignal) =>
+  accessibility
+    .tap(element, { timeoutMs: tapTimeoutMs, signal })
+    .catch(ignoreTimeout);
 
 const tapAlertButton = async (
+  count: number,
   index: number,
   presentedAt: number,
-  timeoutMs: number,
   signal: AbortSignal,
 ): Promise<boolean> => {
-  const button = await accessibility.find(
-    { app, role: "button", within: { role: "sheet" }, index },
-    { timeoutMs, poll: true, signal },
+  const sheet = await accessibility.find(
+    { app, ...buttonSheet },
+    { timeoutMs: 1_500, poll: true, signal },
   );
-  if (button === null) {
+  const buttons = sheet?.findAll({ role: "button" }) ?? [];
+  if (buttons.length !== count) {
     return false;
   }
   await sleep(presentedAt + alertPresentMs - Date.now(), { signal });
-  await input.tap(button.point!, { signal });
+  await input.tap(buttons[index].point!, { signal });
   return true;
 };
 
@@ -202,7 +190,7 @@ async function signOutOnOpen(bar: Rect, signal: AbortSignal): Promise<boolean> {
     });
     const presentedAt = Date.now();
     await input.tap([x + width - backButtonInset, y + height / 2], { signal });
-    return tapAlertButton(1, presentedAt, 3_000, signal);
+    return tapAlertButton(2, 1, presentedAt, signal);
   } catch (error) {
     if (signal.aborted || (error as Error).name !== "TimeoutError") {
       throw error;
@@ -215,17 +203,18 @@ async function chooseAccount(
   other: Account | null,
   bounds: Screen,
   signal: AbortSignal,
-): Promise<string | undefined> {
-  const deadline = Date.now() + 90_000;
-  const done = new Map<string, number>();
+): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  const done = new Map([["primary", Date.now()]]);
+  let acted = Date.now();
   const fresh = (step: string, interval = 2_000) => {
     if (Date.now() - (done.get(step) ?? 0) < interval) {
       return false;
     }
     done.set(step, Date.now());
+    acted = Date.now();
     return true;
   };
-  let signedOut: string | undefined;
   // After signing out, the account page stays, sign-out button included, until it has finished loading.
   let confirmed = false;
   let chosen = false;
@@ -233,14 +222,24 @@ async function chooseAccount(
   while (Date.now() < deadline) {
     const screen = await snapshot(signal);
     if (screen === null) {
-      await sleep(300, { signal });
+      const cancel = await accessibility.find(faceIDCancel, { signal });
+      if (cancel) {
+        confirmed = false;
+        if (fresh("faceID", sheetRetryMs)) {
+          await accessibility.perform(cancel, "press", { signal });
+        }
+      } else {
+        await sleep(300, { signal });
+      }
       continue;
     }
     // The iCloud password prompt may open over anything here, the sheets included; the flow resumes once it is closed.
     const prompt = passwordPrompt(screen);
     if (prompt) {
-      if (fresh("prompt", sheetRetryMs)) {
-        await tapPresented(prompt, bounds, signal);
+      confirmed = false;
+      // Closing it, Settings keeps listing it while it slides off the screen.
+      if (!prompt.offScreen && fresh("prompt", sheetRetryMs)) {
+        await tapPresented(prompt, signal);
       }
       continue;
     }
@@ -248,32 +247,43 @@ async function chooseAccount(
     // Continue, Not <name>? and Cancel, in that order.
     if (sheet.length === 3) {
       if (fresh("choose", sheetRetryMs)) {
-        await tapPresented(sheet[other === null ? 0 : 1], bounds, signal);
+        await tapPresented(sheet[other === null ? 0 : 1], signal);
         chosen = true;
       }
       continue;
     }
     if (chosen) {
-      return signedOut;
+      return;
     }
     // Cancel and Sign Out, in that order.
     if (sheet.length === 2) {
       if (fresh("confirm", sheetRetryMs)) {
-        await tapPresented(sheet[1], bounds, signal);
+        await tapPresented(sheet[1], signal);
         confirmed = true;
       }
       continue;
     }
-    const row = accountPage(screen);
+    const confirming =
+      confirmed && Date.now() - (done.get("confirm") ?? 0) < signOutMs;
+    const row = first(screen, storeRow);
     if (row) {
+      // Signing out brings the account page back with Subscriptions for up to a second, and removing it moves the rows
+      // below (iOS 27.3 24C5037i).
+      const signedIn = first(screen, subscriptionsRow) !== null;
+      if (
+        first(row, { role: "activityIndicator" }) ||
+        (confirming && signedIn)
+      ) {
+        continue;
+      }
       confirmed = false;
       if (fresh("row")) {
-        signedOut = row.label;
         bottom = undefined;
-        // Subscriptions shows only while Media & Purchases is signed in.
-        const signedIn =
-          first(screen, { identifier: "SUBSCRIPTIONS" }) !== null;
-        const bar = first(screen, { role: "navigationBar" })?.frame;
+        // The iPad sidebar has a navigation bar of its own, holding the search field.
+        const bar = first(screen, {
+          role: "navigationBar",
+          not: { has: { role: "searchField" } },
+        })?.frame;
         const presentedAt = Date.now();
         await input.tap(row.point!, { signal });
         if (signedIn) {
@@ -283,12 +293,7 @@ async function chooseAccount(
             done.delete("row");
           }
         } else if (
-          await tapAlertButton(
-            other === null ? 0 : 1,
-            presentedAt,
-            3_000,
-            signal,
-          )
+          await tapAlertButton(3, other === null ? 0 : 1, presentedAt, signal)
         ) {
           chosen = true;
           done.set("choose", Date.now());
@@ -296,22 +301,30 @@ async function chooseAccount(
       }
       continue;
     }
-    if (confirmed) {
+    if (confirming) {
+      continue;
+    }
+    const primary = first(screen, { ...primaryAccount, selected: false });
+    if (primary) {
+      if (fresh("primary", sheetRetryMs)) {
+        await input.tap(primary.point!, { signal });
+      }
       continue;
     }
     // The sign-out button sits in the navigation bar while the account page loads, and ends the page once it has
     // loaded.
     const signOut = first(screen, {
       role: "button",
-      within: { role: "navigationBar" },
+      parent: { role: "navigationBar" },
       not: { identifier: "BackButton" },
     });
     if (signOut) {
       if (fresh("signOut")) {
         const presentedAt = Date.now();
         await input.tap(signOut.point!, { signal });
-        if (await tapAlertButton(1, presentedAt, 3_000, signal)) {
+        if (await tapAlertButton(2, 1, presentedAt, signal)) {
           confirmed = true;
+          done.set("confirm", Date.now());
           done.delete("row");
         }
       }
@@ -334,6 +347,11 @@ async function chooseAccount(
           { durationMs: 300, signal },
         );
       }
+      continue;
+    }
+    const back = first(screen, { identifier: "BackButton" });
+    if (back && Date.now() - acted > 2_000 && fresh("back")) {
+      await input.tap(back.point!, { signal });
     }
   }
   throw new DOMException(
@@ -373,46 +391,38 @@ async function signIn(other: Account, signal: AbortSignal) {
   await input.pressKey("return", { signal });
 }
 
-async function finish(
-  signedOut: string | undefined,
-  signal: AbortSignal,
-): Promise<SwitchResult> {
+async function finish(signal: AbortSignal): Promise<SwitchResult> {
   const deadline = Date.now() + 120_000;
   let waiting: number | undefined;
   while (Date.now() < deadline) {
     const screen = await snapshot(signal);
-    if (screen !== null) {
+    let moving = false;
+    if (screen === null) {
+      await sleep(300, { signal });
+    } else {
       const row = first(screen, storeRow);
+      const spinner = first(screen, { identifier: "SIGN_IN_SPINNER_VIEW" });
       const busy =
-        (row && first(row, { role: "activityIndicator" })) ||
-        first(screen, { identifier: "SIGN_IN_SPINNER_VIEW" });
+        spinner || (row && first(row, { role: "activityIndicator" }));
       const form = first(screen, { identifier: "sign-in-nav-bar" });
       const typing = first(screen, {
         identifier: /^(username|password)-field$/,
       });
-      const prompt = passwordPrompt(screen);
+      const prompted = first(screen, buttonSheet) || passwordPrompt(screen);
       if (
         row &&
-        row.label !== signedOut &&
+        first(screen, subscriptionsRow) &&
         !busy &&
         !form &&
-        !first(screen, buttonSheet) &&
-        !prompt
+        !prompted
       ) {
         return "signedIn";
       }
-      const prompted =
-        first(screen, buttonSheet) ||
-        prompt ||
-        (form &&
-          !typing &&
-          !first(screen, { identifier: "SIGN_IN_SPINNER_VIEW" }));
-      waiting = prompted ? (waiting ?? Date.now()) : undefined;
-      if (waiting !== undefined && Date.now() - waiting > 3_000) {
-        return "needsAttention";
-      }
-    } else {
-      await sleep(300, { signal });
+      moving = !prompted && Boolean(form ? typing || spinner : busy);
+    }
+    waiting = moving ? undefined : (waiting ?? Date.now());
+    if (waiting !== undefined && Date.now() - waiting > 3_000) {
+      return "needsAttention";
     }
   }
   return "needsAttention";
@@ -442,8 +452,9 @@ export default defineExtension({
         }
         const { screen: bounds } = await device.info({ signal });
         await device.launchApplication(app, { restart: true, signal });
+        const launched = Date.now();
         const primary = await accessibility.find(
-          { app, identifier: "com.apple.settings.primaryAppleAccount" },
+          { app, ...primaryAccount },
           { timeoutMs: 10_000, poll: true, signal },
         );
         if (primary === null) {
@@ -452,12 +463,13 @@ export default defineExtension({
             "TimeoutError",
           );
         }
+        await sleep(launched + launchPresentMs - Date.now(), { signal });
         await input.tap(primary.point!, { signal });
-        const signedOut = await chooseAccount(other, bounds, signal);
+        await chooseAccount(other, bounds, signal);
         if (other !== null) {
           await signIn(other, signal);
         }
-        return finish(signedOut, signal);
+        return finish(signal);
       },
     }),
   },
