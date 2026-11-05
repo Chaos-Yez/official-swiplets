@@ -22,7 +22,6 @@ export const records = sqliteTable(
     quick: integer({ mode: "boolean" }).notNull(),
     ms: integer().notNull(),
     text: text().notNull(),
-    delivered: integer(),
     appeared: integer(),
     detected: integer(),
     tapMs: integer("tap_ms"),
@@ -72,7 +71,7 @@ const create = [
   sql`CREATE TABLE IF NOT EXISTS records (
     id INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, app TEXT NOT NULL, kind TEXT NOT NULL,
     fuzzy INTEGER NOT NULL, quick INTEGER NOT NULL, ms INTEGER NOT NULL, text TEXT NOT NULL,
-    delivered INTEGER, appeared INTEGER, detected INTEGER, tap_ms INTEGER, gone INTEGER
+    appeared INTEGER, detected INTEGER, tap_ms INTEGER, gone INTEGER
   )`,
   sql`CREATE INDEX IF NOT EXISTS records_time ON records (time)`,
   sql`CREATE INDEX IF NOT EXISTS records_app ON records (app)`,

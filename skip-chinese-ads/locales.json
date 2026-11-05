@@ -26,12 +26,9 @@
     "closePopupsFooter": "Match and close the popup ads shown when an app comes to the front.",
     "splashAd": "Splash Ad",
     "popupAd": "Popup Ad",
-    "timingDelivered": "Event delivered",
-    "timingAppeared": "Ad appeared",
-    "timingDetected": "Recognized",
-    "timingTapped": "Tapped",
-    "timingTapCost": "Tap took",
-    "timingGone": "Confirmed gone"
+    "timingDetected": "Recognize ad",
+    "timingTapped": "Tap",
+    "timingGone": "Ad disappears"
   },
   "zh-Hans": {
     "title": "跳过广告",
@@ -60,12 +57,9 @@
     "closePopupsFooter": "匹配启动时出现的广告弹窗并跳过。",
     "splashAd": "开屏广告",
     "popupAd": "广告弹窗",
-    "timingDelivered": "事件送达",
-    "timingAppeared": "广告出现",
-    "timingDetected": "识别到",
+    "timingDetected": "识别广告",
     "timingTapped": "点击",
-    "timingTapCost": "点击耗时",
-    "timingGone": "确认消失"
+    "timingGone": "广告消失"
   },
   "zh-Hant": {
     "title": "跳過廣告",
@@ -94,12 +88,9 @@
     "closePopupsFooter": "比對啟動時出現的廣告彈窗並跳過。",
     "splashAd": "開屏廣告",
     "popupAd": "廣告彈窗",
-    "timingDelivered": "事件送達",
-    "timingAppeared": "廣告出現",
-    "timingDetected": "辨識到",
+    "timingDetected": "辨識廣告",
     "timingTapped": "點擊",
-    "timingTapCost": "點擊耗時",
-    "timingGone": "確認消失"
+    "timingGone": "廣告消失"
   },
   "zh-Hant-HK": {
     "title": "跳過廣告",
@@ -128,12 +119,9 @@
     "closePopupsFooter": "比對啟動時出現嘅廣告彈窗並跳過。",
     "splashAd": "開屏廣告",
     "popupAd": "廣告彈窗",
-    "timingDelivered": "事件送達",
-    "timingAppeared": "廣告出現",
-    "timingDetected": "辨識到",
+    "timingDetected": "辨識廣告",
     "timingTapped": "點擊",
-    "timingTapCost": "點擊耗時",
-    "timingGone": "確認消失"
+    "timingGone": "廣告消失"
   },
   "ar": {
     "title": "تخطي إعلانات التطبيقات الصينية",
@@ -642,12 +630,9 @@
     "closePopupsFooter": "起動時に表示されるポップアップ広告を検出して閉じます。",
     "splashAd": "起動時広告",
     "popupAd": "ポップアップ広告",
-    "timingDelivered": "イベント到達",
-    "timingAppeared": "広告表示",
-    "timingDetected": "認識",
+    "timingDetected": "広告の認識",
     "timingTapped": "タップ",
-    "timingTapCost": "タップ所要時間",
-    "timingGone": "消去を確認"
+    "timingGone": "広告の消失"
   },
   "kk": {
     "title": "Қытай қолданбаларындағы жарнаманы өткізіп жіберу",

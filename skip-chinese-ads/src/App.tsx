@@ -194,33 +194,26 @@ const countApps = (count: number) =>
     count.toLocaleString(),
   );
 
-const seconds = (ms: number) =>
-  `${(ms / 1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s`;
+const duration = (ms: number) =>
+  ms < 1000
+    ? `${Math.round(ms).toLocaleString()} ms`
+    : `${(ms / 1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s`;
 
-const millis = (ms: number) => `${Math.round(ms).toLocaleString()} ms`;
-
-const timings = (record: RecordRow): [string, string][] => {
-  const rows: [string, string | null][] = [
-    [
-      strings.timingDelivered,
-      record.delivered === null ? null : millis(record.delivered),
-    ],
-    [
-      strings.timingAppeared,
-      record.appeared === null ? null : seconds(record.appeared),
-    ],
-    [
-      strings.timingDetected,
-      record.detected === null ? null : seconds(record.detected),
-    ],
-    [strings.timingTapped, seconds(record.ms)],
-    [
-      strings.timingTapCost,
-      record.tapMs === null ? null : millis(record.tapMs),
-    ],
-    [strings.timingGone, record.gone === null ? null : seconds(record.gone)],
+const steps = (record: RecordRow): [string, number][] => {
+  const marks: [string, number | null][] = [
+    [strings.timingDetected, record.appeared === null ? null : record.detected],
+    [strings.timingTapped, record.ms + (record.tapMs ?? 0)],
+    [strings.timingGone, record.gone],
   ];
-  return rows.filter((row): row is [string, string] => row[1] !== null);
+  let reached = record.appeared ?? record.detected ?? record.ms;
+  return marks.flatMap(([label, mark]): [string, number][] => {
+    if (mark === null) {
+      return [];
+    }
+    const step = mark - reached;
+    reached = mark;
+    return [[label, step]];
+  });
 };
 
 const clock = (time: number) =>
@@ -328,13 +321,17 @@ function AppRecords({ name, records }: { name: string; records: RecordRow[] }) {
                         monospacedDigit(),
                       ]}
                     >
-                      {seconds(record.ms)}
+                      {duration(
+                        steps(record).reduce((sum, [, step]) => sum + step, 0),
+                      )}
                     </Text>
                   </HStack>
                 </DisclosureGroup.Label>
-                {timings(record).map(([label, value]) => (
+                {steps(record).map(([label, step]) => (
                   <LabeledContent key={label} label={label}>
-                    <Text modifiers={[monospacedDigit()]}>{value}</Text>
+                    <Text modifiers={[monospacedDigit()]}>
+                      {duration(step)}
+                    </Text>
                   </LabeledContent>
                 ))}
               </DisclosureGroup>

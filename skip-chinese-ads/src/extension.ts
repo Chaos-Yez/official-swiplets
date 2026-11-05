@@ -24,7 +24,7 @@ import {
 } from "./storage";
 
 const rewarded: Rule = { within: { class: /Reward|Incentive/i } };
-const ownApps = /^(?:com\.apple\.|io\.nekohasekai\.swipt$)/;
+const ownApps = /^(?:com\.apple\.|io\.nekohasekai\.swipt(?:\.|$))/;
 const adWindowMs = 5_000;
 const skipText = /跳过/;
 const repeatWindowMs = 800;
@@ -82,7 +82,6 @@ const skipAds = async (
   app: string,
   pid: number,
   since: number,
-  delivered: number,
   closePopups: boolean,
   screenSize: { width: number; height: number },
   shown: Promise<number>,
@@ -139,6 +138,21 @@ const skipAds = async (
       await sleep(vanishPollMs, { signal });
     }
     return true;
+  };
+
+  const inSdkControl = async (point: Point) => {
+    try {
+      const control = await accessibility.find(selectors, { signal });
+      return (
+        control?.frame !== undefined &&
+        contains(around(control.frame, treeMargin), point)
+      );
+    } catch (error) {
+      if ((error as Error).name !== "UnavailableError") {
+        throw error;
+      }
+      return false;
+    }
   };
 
   const remember = async (
@@ -204,6 +218,11 @@ const skipAds = async (
         await sleep(repeatWindowMs - (Date.now() - lastTap.at), { signal });
         continue;
       }
+      if (fuzzy && !(await inSdkControl(point))) {
+        console.debug(`${stamp()} ${how} is not in an SDK control`);
+        await sleep(repeatWindowMs, { signal });
+        continue;
+      }
       const tapping = Date.now();
       lastTap = { at: tapping, point };
       await input.tap(point, { signal });
@@ -234,7 +253,6 @@ const skipAds = async (
           ms: tapping - since,
           text: match.text ?? "",
           kind: "skip",
-          delivered,
           appeared:
             match.image.timestamp === null
               ? undefined
@@ -405,7 +423,6 @@ const skipAds = async (
         ms: acting - since,
         text: found.label ?? found.class ?? "",
         kind: "close",
-        delivered,
         detected: detected - since,
         tapMs,
         gone: Date.now() - since,
@@ -512,9 +529,8 @@ export default defineExtension({
       if (ownApps.test(event.bundleId)) {
         continue;
       }
-      const delivered = Date.now() - event.time;
       console.debug(
-        `${event.bundleId} pid ${event.pid}: ${event.type}, delivered ${delivered}ms after the event`,
+        `${event.bundleId} pid ${event.pid}: ${event.type}, delivered ${Date.now() - event.time}ms after the event`,
       );
       const running = rounds.get(event.bundleId);
       if (event.type === "background") {
@@ -551,7 +567,6 @@ export default defineExtension({
         event.bundleId,
         event.pid,
         event.time,
-        delivered,
         settings.closePopups,
         screenSize,
         onScreen,
