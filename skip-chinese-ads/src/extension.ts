@@ -25,6 +25,7 @@ import {
 
 const rewarded: Rule = { within: { class: /Reward|Incentive/i } };
 const ownApps = /^(?:com\.apple\.|io\.nekohasekai\.swipt(?:\.|$))/;
+const noRecordingApps = new Set(["com.unionpay.chsp", "com.uniqlo.cn"]);
 const adWindowMs = 5_000;
 const skipText = /跳过/;
 const repeatWindowMs = 800;
@@ -122,10 +123,12 @@ const skipAds = async (
     ];
   };
 
+  const watching = new AbortController();
+  const watchSignal = AbortSignal.any([signal, watching.signal]);
   const textOptions = {
     languages: textLanguages,
     minimumHeight: minimumTextHeight,
-    signal,
+    signal: watchSignal,
   };
 
   const vanished = async (frame: Rect, within: number) => {
@@ -138,21 +141,6 @@ const skipAds = async (
       await sleep(vanishPollMs, { signal });
     }
     return true;
-  };
-
-  const inSdkControl = async (point: Point) => {
-    try {
-      const control = await accessibility.find(selectors, { signal });
-      return (
-        control?.frame !== undefined &&
-        contains(around(control.frame, treeMargin), point)
-      );
-    } catch (error) {
-      if ((error as Error).name !== "UnavailableError") {
-        throw error;
-      }
-      return false;
-    }
   };
 
   const remember = async (
@@ -180,7 +168,7 @@ const skipAds = async (
   };
 
   const watchScreen = async (region: Rect) => {
-    while (!signal.aborted) {
+    while (!watchSignal.aborted) {
       const remaining = adWindowMs - (Date.now() - started);
       if (remaining <= 0) {
         return;
@@ -218,11 +206,6 @@ const skipAds = async (
         await sleep(repeatWindowMs - (Date.now() - lastTap.at), { signal });
         continue;
       }
-      if (fuzzy && !(await inSdkControl(point))) {
-        console.debug(`${stamp()} ${how} is not in an SDK control`);
-        await sleep(repeatWindowMs, { signal });
-        continue;
-      }
       const tapping = Date.now();
       lastTap = { at: tapping, point };
       await input.tap(point, { signal });
@@ -244,6 +227,7 @@ const skipAds = async (
       }
       if (still === null) {
         const gone = Date.now();
+        watching.abort();
         await remember(frame, undefined, how);
         await appendRecord({
           time: tapping,
@@ -274,20 +258,21 @@ const skipAds = async (
 
   const watchTree = async () => {
     let seen: string | undefined;
-    while (!signal.aborted) {
+    while (!watchSignal.aborted) {
+      const remaining = adWindowMs - (Date.now() - started);
+      if (remaining <= 0) {
+        return;
+      }
       const asked = Date.now();
       const found = await accessibility.find(selectors, {
-        timeoutMs: Infinity,
+        timeoutMs: remaining,
         poll: true,
         pollTimeoutMs: adWindowMs,
-        signal,
+        signal: watchSignal,
       });
       const waited = Date.now() - asked;
       if (found === null) {
-        continue;
-      }
-      if (waited > adWindowMs) {
-        seen = undefined;
+        return;
       }
       const control = describe(found);
       if (found.frame === undefined) {
@@ -321,10 +306,96 @@ const skipAds = async (
         continue;
       }
       if (await vanished(visible.frame, learnVanishMs)) {
+        watching.abort();
         await remember(visible.frame, name, control);
       } else {
         console.debug(`${stamp()} ${control} stayed on screen, not learned`);
       }
+    }
+  };
+
+  const watchSdk = async () => {
+    while (!watchSignal.aborted) {
+      const remaining = adWindowMs - (Date.now() - started);
+      if (remaining <= 0) {
+        return;
+      }
+      const found = await accessibility.find(selectors, {
+        timeoutMs: remaining,
+        poll: true,
+        pollTimeoutMs: adWindowMs,
+        signal: watchSignal,
+      });
+      if (found === null) {
+        return;
+      }
+      const detected = Date.now();
+      const control = describe(found);
+      if (found.frame === undefined) {
+        console.debug(`${stamp()} ${control} has no position`);
+        await sleep(repeatWindowMs, { signal: watchSignal });
+        continue;
+      }
+      const point = centerOf(found.frame);
+      if (
+        lastTap !== undefined &&
+        distance(point, lastTap.point) < repeatDistance &&
+        Date.now() - lastTap.at < repeatWindowMs
+      ) {
+        await sleep(repeatWindowMs - (Date.now() - lastTap.at), {
+          signal: watchSignal,
+        });
+        continue;
+      }
+      const tapping = Date.now();
+      try {
+        await accessibility.tap(found, {
+          timeoutMs: remaining,
+          signal: watchSignal,
+        });
+      } catch (error) {
+        if ((error as Error).name !== "TimeoutError") {
+          throw error;
+        }
+        console.debug(
+          `${stamp()} ${control} cannot be tapped: ${(error as Error).message}`,
+        );
+        continue;
+      }
+      lastTap = { at: tapping, point };
+      const tapMs = Date.now() - tapping;
+      console.debug(`${stamp()} tapped ${control} in ${tapMs}ms`);
+      const deadline = Date.now() + closeVanishMs;
+      let still: AccessibilityElement | null;
+      while (
+        (still = await accessibility.find(selectors, {
+          signal: watchSignal,
+        })) !== null
+      ) {
+        if (Date.now() >= deadline) {
+          break;
+        }
+        await sleep(vanishPollMs, { signal: watchSignal });
+      }
+      if (still !== null) {
+        console.debug(`${stamp()} ${control} is still there after the tap`);
+        continue;
+      }
+      const gone = Date.now();
+      watching.abort();
+      await remember(found.frame, found.class ?? found.role, control);
+      await appendRecord({
+        time: tapping,
+        app,
+        fuzzy,
+        quick: false,
+        ms: tapping - since,
+        text: found.label ?? found.class ?? "",
+        kind: "skip",
+        detected: detected - since,
+        tapMs,
+        gone: gone - since,
+      });
     }
   };
 
@@ -457,10 +528,10 @@ const skipAds = async (
     );
   };
 
-  const watchTreeResilient = async () => {
+  const resilient = async (watch: () => Promise<void>) => {
     while (!signal.aborted) {
       try {
-        await watchTree();
+        await watch();
         return;
       } catch (error) {
         if (
@@ -498,15 +569,25 @@ const skipAds = async (
   console.debug(`${stamp()} round started with ${known.length} controls`);
   try {
     const shownAt = await shown;
+    const watchers = noRecordingApps.has(app)
+      ? [resilient(watchSdk)]
+      : fuzzy
+        ? [
+            ...known.map((control) => watchScreen(around(control.frame))),
+            resilient(watchSdk),
+          ]
+        : [
+            ...regions.map(watchScreen),
+            ...(known.length === 0 ? [resilient(watchTree)] : []),
+          ];
     await Promise.all([
-      ...regions.map((region) =>
-        watchScreen(region).catch((error: Error) => {
+      ...watchers.map((watcher) =>
+        watcher.catch((error: Error) => {
           if (error.name !== "AbortError") {
-            console.warn(`${stamp()} watching the screen failed`, error);
+            console.warn(`${stamp()} watching for the ad failed`, error);
           }
         }),
       ),
-      ...(known.length === 0 ? [watchTreeResilient()] : []),
       ...(closes.length > 0 ? [watchPopupsResilient(shownAt)] : []),
     ]);
   } finally {
