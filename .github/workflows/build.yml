@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Check
+        run: bun run check
+      - name: Build
+        run: |-
+          bun run build
+          node_modules/.bin/swipt project source
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: swiplets
+          path: dist
+          if-no-files-found: error
+      - name: Publish
+        if: github.ref == 'refs/heads/main'
+        run: |-
+          source .github/github.sh
+          PREVIOUS=0
+          if retry git fetch --depth=1 origin tag nightly; then
+            PREVIOUS=$(git tag -l --format='%(contents:subject)' nightly)
+          fi
+          BUILD_NUMBER=$((PREVIOUS + 1))
+          if RELEASE=$(retry gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name); then
+            NOTES=$(git log --format='* %s' "$RELEASE..")
+          else
+            NOTES=$(git log --format='* %s')
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" tag -a -f nightly -m "$BUILD_NUMBER" "$GITHUB_SHA"
+          retry git push -f origin refs/tags/nightly
+          DRAFT=$(retry create_draft nightly-draft --prerelease --target "$GITHUB_SHA" --title "Nightly build" --notes "$NOTES" dist/*)
+          if PREVIOUS=$(retry gh api "repos/$GITHUB_REPOSITORY/releases/tags/nightly" --jq .url); then
+            retry delete "$PREVIOUS"
+          fi
+          retry gh api -X PATCH "$DRAFT" -f tag_name=nightly -F draft=false > /dev/null
+        env:
+          GH_TOKEN: ${{ github.token }}
