@@ -71,8 +71,8 @@
   },
   "devDependencies": {
     "@expo/ui": "~58.0.26",
-    "@swipt/api": "0.1.0-nightly.54",
-    "@swipt/cli": "0.1.0-nightly.54",
+    "@swipt/api": "0.1.0-nightly.59",
+    "@swipt/cli": "0.1.0-nightly.59",
     "@types/react": "~19.3.0",
     "react": "19.3.0",
     "typescript": "^7.0.2"

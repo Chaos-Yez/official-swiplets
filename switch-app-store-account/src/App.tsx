@@ -27,7 +27,8 @@ import {
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
 import { useEffect, useState } from "react";
-import { actions, exit, preferredLocalizations } from "@swipt/api/swiplet";
+import { preferredLocalizations } from "@swipt/api/localization";
+import { actions, exit } from "@swipt/api/swiplet";
 
 import locales from "../locales.json";
 import type extension from "./extension";

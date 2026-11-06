@@ -32,12 +32,8 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { useLiveQuery } from "drizzle-orm/expo-sqlite";
 import { useEffect, useMemo, useState } from "react";
-import {
-  actions,
-  exit,
-  preferredLocalizations,
-  useService,
-} from "@swipt/api/swiplet";
+import { actions, exit, useService } from "@swipt/api/swiplet";
+import { preferredLocalizations } from "@swipt/api/localization";
 
 import locales from "../locales.json";
 import type extension from "./extension";
