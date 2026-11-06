@@ -63,6 +63,8 @@ jobs:
           if PREVIOUS=$(retry gh api "repos/$GITHUB_REPOSITORY/releases/tags/nightly" --jq .url); then
             retry delete "$PREVIOUS"
           fi
+          echo "DRAFT=[$DRAFT]"
           retry gh api -X PATCH "$DRAFT" -f tag_name=nightly -F draft=false > /dev/null
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_DEBUG: api
