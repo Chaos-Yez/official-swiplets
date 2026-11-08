@@ -4,7 +4,6 @@
   "private": true,
   "swiplet": {
     "id": "switch-app-store-account",
-    "versionCode": 2,
     "name": "Switch App Store Account",
     "localizedNames": {
       "ar": "تبديل حساب App Store",

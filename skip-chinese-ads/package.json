@@ -4,7 +4,6 @@
   "private": true,
   "swiplet": {
     "id": "skip-chinese-ads",
-    "versionCode": 2,
     "name": "Skip Chinese App Ads",
     "localizedNames": {
       "ar": "تخطي إعلانات التطبيقات الصينية",

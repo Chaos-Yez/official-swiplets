@@ -4,7 +4,6 @@
   "private": true,
   "swiplet": {
     "id": "simulate-location",
-    "versionCode": 2,
     "name": "Simulate Location",
     "localizedNames": {
       "ar": "محاكاة الموقع",
