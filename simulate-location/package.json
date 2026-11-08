@@ -1,10 +1,10 @@
 {
   "name": "simulate-location",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "swiplet": {
     "id": "simulate-location",
-    "versionCode": 1,
+    "versionCode": 2,
     "name": "Simulate Location",
     "localizedNames": {
       "ar": "محاكاة الموقع",
@@ -71,8 +71,8 @@
   },
   "devDependencies": {
     "@expo/ui": "~58.0.26",
-    "@swipt/api": "0.1.0-nightly.60",
-    "@swipt/cli": "0.1.0-nightly.60",
+    "@swipt/api": "0.1.0-nightly.74",
+    "@swipt/cli": "0.1.0-nightly.74",
     "@types/react": "~19.3.0",
     "expo-maps": "~58.0.11",
     "react": "19.3.0",

@@ -7,7 +7,7 @@ import type {
 import * as device from "@swipt/api/device";
 import * as input from "@swipt/api/input";
 import type { Rect } from "@swipt/api";
-import { waitForChange } from "@swipt/api/screen";
+import { open as openScreen } from "@swipt/api/screen";
 import { defineAction, defineExtension, type Schema } from "@swipt/api/swiplet";
 
 import { readAccounts, type Account } from "./storage";
@@ -26,6 +26,8 @@ const alertPresentMs = 500;
 // 500 ms, and took them all from 521 ms.
 const launchPresentMs = 550;
 const signOutMs = 5_000;
+const signOutButtonWaitMs = 2_000;
+const signOutButtonChange = 1 / 5000;
 
 type SwitchResult = "signedIn" | "needsAttention";
 
@@ -180,23 +182,53 @@ const tapAlertButton = async (
 
 // Settings answers accessibility reads up to 1.3 s late while the account page loads (iOS 27.2 24B115). Its sign-out
 // button sits in the navigation bar, mirroring the back button.
-async function signOutOnOpen(bar: Rect, signal: AbortSignal): Promise<boolean> {
+async function signOutButtonAppeared(
+  bar: Rect,
+  signal: AbortSignal,
+): Promise<boolean> {
   const [x, y, width, height] = bar;
+  const region: Rect = [
+    x + width - signOutButtonWidth,
+    y,
+    signOutButtonWidth,
+    height,
+  ];
+  const limit = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(signOutButtonWaitMs),
+  ]);
   try {
-    await waitForChange({
-      region: [x + width - signOutButtonWidth, y, signOutButtonWidth, height],
-      timeoutMs: 2_000,
-      signal,
-    });
-    const presentedAt = Date.now();
-    await input.tap([x + width - backButtonInset, y + height / 2], { signal });
-    return tapAlertButton(2, 1, presentedAt, signal);
+    const stream = await openScreen({ signal: limit });
+    try {
+      const before = (await stream.frames.get({ signal: limit })).crop(region);
+      for await (const frame of stream.frames.values({ signal: limit })) {
+        const difference = await frame
+          .crop(region)
+          .diff(before, { signal: limit });
+        if (difference.ratio >= signOutButtonChange) {
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      await stream.close();
+    }
   } catch (error) {
-    if (signal.aborted || (error as Error).name !== "TimeoutError") {
+    if (signal.aborted || !limit.aborted) {
       throw error;
     }
     return false;
   }
+}
+
+async function signOutOnOpen(bar: Rect, signal: AbortSignal): Promise<boolean> {
+  if (!(await signOutButtonAppeared(bar, signal))) {
+    return false;
+  }
+  const [x, y, width, height] = bar;
+  const presentedAt = Date.now();
+  await input.tap([x + width - backButtonInset, y + height / 2], { signal });
+  return tapAlertButton(2, 1, presentedAt, signal);
 }
 
 async function chooseAccount(

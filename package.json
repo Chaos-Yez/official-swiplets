@@ -69,6 +69,6 @@
     "check": "bun run --filter '*' check"
   },
   "devDependencies": {
-    "@swipt/cli": "0.1.0-nightly.62"
+    "@swipt/cli": "0.1.0-nightly.74"
   }
 }
