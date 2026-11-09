@@ -39,7 +39,7 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Check
         run: bun run check
-      - name: Set version codes
+      - name: Set versions
         id: version
         run: |-
           source .github/github.sh
@@ -62,7 +62,7 @@ jobs:
               CODE=$(jq --arg id "$ID" --argjson code "$CODE" 'first(.swiplets[] | select(.id == $id) | .versionCode) // $code' <<< "$FEED")
             fi
             echo "$ID versionCode=$CODE"
-            jq --argjson code "$CODE" '.swiplet.versionCode = $code' "$directory/package.json" > "$RUNNER_TEMP/package.json"
+            jq --argjson code "$CODE" '.version += "-nightly" | .swiplet.versionCode = $code' "$directory/package.json" > "$RUNNER_TEMP/package.json"
             mv "$RUNNER_TEMP/package.json" "$directory/package.json"
           done
         env:
@@ -106,11 +106,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
+          ref: nightly
           fetch-depth: 0
-      - name: Release
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - name: Set versions
+        id: version
         run: |-
           source .github/github.sh
-          COMMIT=$(git rev-parse 'nightly^{commit}')
+          COMMIT=$(git rev-parse HEAD)
           NIGHTLY=$(retry gh api "repos/$GITHUB_REPOSITORY/releases/tags/nightly")
           if [ "$(jq -r .target_commitish <<< "$NIGHTLY")" != "$COMMIT" ]; then
             echo "the nightly release is not built from the nightly tag" >&2
@@ -122,21 +132,42 @@ jobs:
             echo "$TAG already exists" >&2
             exit 1
           fi
-          mkdir build
-          jq -r '.assets[] | "\(.url) \(.name)"' <<< "$NIGHTLY" | while read -r url name; do
-            retry gh api -H 'Accept: application/octet-stream' "$url" > "build/$name"
+          FEED=$(retry gh api -H 'Accept: application/octet-stream' "$(jq -r '.assets[] | select(.name == "swiplets.json") | .url' <<< "$NIGHTLY")")
+          for directory in $(jq -r '.workspaces[]' package.json); do
+            ID=$(jq -r '.swiplet.id // empty' "$directory/package.json")
+            if [ -z "$ID" ]; then
+              continue
+            fi
+            CODE=$(jq --arg id "$ID" 'first(.swiplets[] | select(.id == $id) | .versionCode) // empty' <<< "$FEED")
+            if [ -z "$CODE" ]; then
+              echo "$ID is not in the nightly release" >&2
+              exit 1
+            fi
+            echo "$ID versionCode=$CODE"
+            jq --argjson code "$CODE" '.swiplet.versionCode = $code' "$directory/package.json" > "$RUNNER_TEMP/package.json"
+            mv "$RUNNER_TEMP/package.json" "$directory/package.json"
           done
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: |-
+          bun run build
+          node_modules/.bin/swipt project source
+      - name: Release
+        run: |-
+          source .github/github.sh
           LEVEL=$(npm view @swipt/api@latest apiLevel)
-          REQUIRED=$(jq -r --argjson level "$LEVEL" '.swiplets[] | select(.minimumAPILevel > $level) | "\(.id) requires API level \(.minimumAPILevel), but @swipt/api@latest has \($level)"' build/swiplets.json)
+          REQUIRED=$(jq -r --argjson level "$LEVEL" '.swiplets[] | select(.minimumAPILevel > $level) | "\(.id) requires API level \(.minimumAPILevel), but @swipt/api@latest has \($level)"' dist/swiplets.json)
           if [ -n "$REQUIRED" ]; then
             echo "$REQUIRED" >&2
             exit 1
           fi
-          UNRESOLVED=$(jq -r --argjson assets "$(jq '[.assets[].name]' <<< "$NIGHTLY")" '[.swiplets[].url] - $assets | .[] | "\(.) is not a release asset"' build/swiplets.json)
-          if [ -n "$UNRESOLVED" ]; then
-            echo "$UNRESOLVED" >&2
-            exit 1
-          fi
-          retry create_draft "$TAG" --target "$COMMIT" --notes "" build/*
+          retry create_draft "$TAG" --target "$COMMIT" --notes "" dist/*
         env:
+          COMMIT: ${{ steps.version.outputs.commit }}
+          TAG: ${{ steps.version.outputs.tag }}
           GH_TOKEN: ${{ github.token }}

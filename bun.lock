@@ -5,7 +5,7 @@
     "": {
       "name": "swiplets-official",
       "devDependencies": {
-        "@swipt/cli": "0.1.0-nightly.74",
+        "@swipt/cli": "0.1.0-nightly.86",
       },
     },
     "simulate-location": {
@@ -13,8 +13,8 @@
       "version": "0.2.0",
       "devDependencies": {
         "@expo/ui": "~58.0.26",
-        "@swipt/api": "0.1.0-nightly.74",
-        "@swipt/cli": "0.1.0-nightly.74",
+        "@swipt/api": "0.1.0-nightly.86",
+        "@swipt/cli": "0.1.0-nightly.86",
         "@types/react": "~19.3.0",
         "expo-maps": "~58.0.11",
         "react": "19.3.0",
@@ -29,8 +29,8 @@
       },
       "devDependencies": {
         "@expo/ui": "~58.0.26",
-        "@swipt/api": "0.1.0-nightly.74",
-        "@swipt/cli": "0.1.0-nightly.74",
+        "@swipt/api": "0.1.0-nightly.86",
+        "@swipt/cli": "0.1.0-nightly.86",
         "@types/react": "~19.3.0",
         "expo-sqlite": "~58.0.15",
         "react": "19.3.0",
@@ -42,8 +42,8 @@
       "version": "0.2.0",
       "devDependencies": {
         "@expo/ui": "~58.0.26",
-        "@swipt/api": "0.1.0-nightly.74",
-        "@swipt/cli": "0.1.0-nightly.74",
+        "@swipt/api": "0.1.0-nightly.86",
+        "@swipt/cli": "0.1.0-nightly.86",
         "@types/react": "~19.3.0",
         "react": "19.3.0",
         "typescript": "^7.0.2",
@@ -405,9 +405,11 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@swipt/api": ["@swipt/api@0.1.0-nightly.74", "", { "dependencies": { "@standard-schema/spec": "^1.1.0" }, "peerDependencies": { "@expo/ui": "~58.0.26", "@types/react": "~19.3.0", "expo": "~58.0.22", "expo-localization": "~58.0.5", "expo-maps": "~58.0.11", "expo-sqlite": "~58.0.15", "react": "19.3.0", "react-native": "0.88.1", "react-native-worklets": "0.13.0" }, "optionalPeers": ["@expo/ui", "@types/react", "expo", "expo-localization", "expo-maps", "expo-sqlite", "react", "react-native", "react-native-worklets"] }, "sha512-inrQxXcsnjYqurQWFQSR35pVkuSll6sa4vcwtT9ceKEEd01+XQvt6Dlp/N89p6/cFWUZlZn9eQKZkxVzBQ30jA=="],
+    "@swipt/api": ["@swipt/api@0.1.0-nightly.86", "", { "dependencies": { "@standard-schema/spec": "^1.1.0" }, "peerDependencies": { "@expo/ui": "~58.0.26", "@types/react": "~19.3.0", "expo": "~58.0.22", "expo-localization": "~58.0.5", "expo-maps": "~58.0.11", "expo-sqlite": "~58.0.15", "react": "19.3.0", "react-native": "0.88.1", "react-native-worklets": "0.13.0" }, "optionalPeers": ["@expo/ui", "@types/react", "expo", "expo-localization", "expo-maps", "expo-sqlite", "react", "react-native", "react-native-worklets"] }, "sha512-Vzz58c/MsRFzKzz/sjLRx35oYjnfrEoBCWLvOihS46hHCPGq6Wk7H4YpPPelMF1W2af8PWljhUhuv9ul7ZQ5Tg=="],
 
-    "@swipt/cli": ["@swipt/cli@0.1.0-nightly.74", "", { "dependencies": { "@babel/core": "^7.29.7", "@babel/plugin-transform-block-scoping": "^7.29.12", "@babel/runtime": "^7.29.10", "@bufbuild/protobuf": "^2.16.0", "@expo/env": "^2.5.3", "@inquirer/password": "^5.2.5", "@inquirer/select": "^5.2.8", "babel-preset-expo": "~58.0.23", "bonjour-service": "^1.4.4", "esbuild": "^0.28.2", "image-size": "^2.0.4", "multicast-dns": "^7.2.5", "react-native-worklets": "0.13.0", "string-width": "^8.1.0", "typescript": "7.0.2" }, "optionalDependencies": { "@swipt/server-darwin-arm64": "0.1.0-nightly.74", "@swipt/server-darwin-x64": "0.1.0-nightly.74" }, "peerDependencies": { "@swipt/api": "0.1.0-nightly.74" }, "bin": { "swipt": "swipt.mjs" } }, "sha512-I3IDxrDAqw5doMKOnL5XRAhbnGdsPsyoN/uK44xJ0tU3WZQDi6m3LSIkr7G501eHIK+X2sX7HlD5oTUUcMuKKw=="],
+    "@swipt/cli": ["@swipt/cli@0.1.0-nightly.86", "", { "dependencies": { "@babel/core": "^7.29.7", "@babel/plugin-transform-block-scoping": "^7.29.12", "@babel/runtime": "^7.29.10", "@bufbuild/protobuf": "^2.16.0", "@expo/env": "^2.5.3", "@inquirer/password": "^5.2.5", "@inquirer/select": "^5.2.8", "babel-preset-expo": "~58.0.23", "bonjour-service": "^1.4.4", "esbuild": "^0.28.2", "image-size": "^2.0.4", "multicast-dns": "^7.2.5", "react-native-worklets": "0.13.0", "string-width": "^8.1.0", "typescript": "7.0.2" }, "optionalDependencies": { "@swipt/server-darwin-arm64": "0.1.0-nightly.86", "@swipt/server-darwin-x64": "0.1.0-nightly.86" }, "peerDependencies": { "@swipt/api": "0.1.0-nightly.86" }, "bin": { "swipt": "dist/bin/swipt.js" } }, "sha512-Quxa3y1ap7GpDaVycrgK7lO4axuu+pPQHY/s4glirUncOrYWGvjWgy4Scqj7nCH7P8z5Zcvr+iZUP0M15s2G8g=="],
+
+    "@swipt/server-darwin-arm64": ["@swipt/server-darwin-arm64@0.1.0-nightly.86", "", { "os": "darwin", "cpu": "arm64", "bin": { "swipt-server": "swipt-server" } }, "sha512-sf1Tmp84IDI0udLM/rTnfm+X2VRkh4qhrKtomBfmq30mwkuA0ol57J4sPiwZfLggux0k9Bf0WtKDvHufUEe/GA=="],
 
     "@types/istanbul-lib-coverage": ["@types/istanbul-lib-coverage@2.0.6", "", {}, "sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w=="],
 
