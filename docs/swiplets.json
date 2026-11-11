@@ -8,7 +8,7 @@
       "id": "roco-auto-tap",
       "name": "洛克王国 · 自动投掷",
       "version": "0.1.0-nightly",
-      "versionCode": 6,
+      "versionCode": 7,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -32,8 +32,8 @@
         }
       ],
       "url": "roco-auto-tap.swiplet",
-      "size": 14511,
-      "sha256": "8c8303b154e7b5c3b80bceee65fdab9893635732e53626b2d0f80b819363b8b6"
+      "size": 16188,
+      "sha256": "43a8d9638af269774ae4f5503922ab9aa06c490dfc8f2141a0ab5987f3fd7927"
     }
   ]
 }
