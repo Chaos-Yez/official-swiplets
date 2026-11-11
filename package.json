@@ -8,9 +8,6 @@
     }
   },
   "workspaces": [
-    "skip-chinese-ads",
-    "switch-app-store-account",
-    "simulate-location",
     "roco-auto-tap"
   ],
   "scripts": {

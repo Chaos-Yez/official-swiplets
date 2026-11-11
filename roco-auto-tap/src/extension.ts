@@ -1,71 +1,54 @@
 // 洛克王国 · 自动投掷 (Swiplet)
 // ---------------------------------------------------------------------------
-// 一键流程：跳转 com.tencent.nrc → 等切换动画结束 → 每秒点击一次右下角
-// 「投掷」按钮（带细微随机偏移，避开相邻按钮）。
-// 停止：切换应用、游戏进入后台、拉下控制中心 / 通知中心、回到主屏。
+// start  : 跳转 com.tencent.nrc → 按「已启用点位」的顺序循环点击，间隔可配置。
+// record : 跳转游戏 → 抓一张当前画面 → 回到 Swipt，供设置页点选并「记录坐标」。
 //
 // 【架构要点，别再改回去】
-// Swipt 的 internal/automation/engine.go: Host.execute() 每次调用 Action 都会
-// newEngine() 并 defer e.close()；Action 的 run() 一返回，这个 JS 引擎立即销毁。
-// 因此连点循环必须 **await 在 Action 的 run() 里**，不能 fire-and-forget 起个
-// 后台 Promise 就返回。另外 run() 常驻服务与 Action 是两个独立引擎，模块级
-// 变量不共享，停止判定也必须放在同一个 Action 内。
+// internal/automation/engine.go: Host.execute() 每次执行 Action 都会 newEngine()
+// 并 defer e.close()。Action 的 run() 一返回，整个 JS 引擎立即销毁。所以连点
+// 循环必须 await 在 Action 内，不能 fire-and-forget。run() 常驻服务与 Action
+// 是两个独立引擎，内存不共享；配置与坐标通过 dataDirectory 里的文件传递。
 //
-// API 依据（swipt/api/*.d.ts、internal/automation/ops.go、internal/device/screen.go）：
-//   device.launchApplication(bundleId, { signal }): Promise<void>
-//   device.foregroundApplication.get({ signal }): Promise<string>
-//   device.applicationEvents({ signal }): AsyncIterable<ApplicationStateEvent>
-//   device.info({signal}).screen = { width, height, scale, orientation }
-//   input.tap(point, { signal })；input.tap 与 device.info().screen 同坐标系
-//   （ops.go deviceTap → TapPoint → touchPoint 用 screenGeometry 归一化）
+// input.tap 与 device.info().screen 同一坐标系（ops.go deviceTap → TapPoint →
+// touchPoint 用 screenGeometry 归一化，screen.go touchTurns 负责旋转）。
 // ---------------------------------------------------------------------------
 
 import type { Point } from "@swipt/api";
 import * as device from "@swipt/api/device";
+import { dataDirectory } from "@swipt/api/file-system";
 import * as input from "@swipt/api/input";
 import { defineAction, defineExtension } from "@swipt/api/swiplet";
+import {
+  readSettings,
+  recordImageFile,
+  REF_H,
+  REF_W,
+  writeRecording,
+  type TapPoint,
+} from "./settings";
 
-// ============ 只需改这里 ============
-/** 洛克王国的 bundle id */
 const GAME_BUNDLE_ID = "com.tencent.nrc";
-/** 参考截图分辨率（横屏游戏截图） */
-const REF_W = 2217;
-const REF_H = 1024;
-/** 截图里「投掷」按钮圆心（白色手掌 + 星形的大圆） */
-const TARGET_REF: Point = [1760, 780];
-/** 目标按钮半径约 94px；点击点限制在此半径内 */
-const SAFE_RADIUS_PX = 40;
-/** 每次点击的随机偏移半径（截图像素，约 ±10px） */
-const JITTER_PX = 10;
-/** 点击间隔（毫秒） */
-const INTERVAL_MS = 1000;
-/** 跳转后等待切换动画结束（毫秒）；不再靠轮询前台判定是否启动 */
+/** Swipt 自身，抓取画面后跳回设置页用（官方 ownApps 正则里的前缀） */
+const SWIPT_BUNDLE_ID = "io.nekohasekai.swipt";
+/** 跳转后等待切换动画 */
 const LAUNCH_SETTLE_MS = 1200;
+/** 坐标记录：跳到游戏后留给用户切到目标画面的时间 */
+const RECORD_DELAY_MS = 3000;
 /** 启动后的事件宽限期，避免切换动画里的系统 UI 事件误停 */
 const GRACE_MS = 800;
-/** 连续点击失败多少次后退出（避免「显示运行中但其实一次没点」） */
+/** 每次点击的随机偏移半径（参考截图像素，约 ±10px） */
+const JITTER_PX = 10;
+/** 连续点击失败多少次后退出 */
 const MAX_FAILURES = 3;
-
-/** 相邻按钮禁区（截图坐标，半径已加 8px 缓冲） */
-const NEIGHBORS_REF: { center: Point; radius: number }[] = [
-  { center: [1685, 710], radius: 33 + 8 }, // 左上：紫色投掷球切换
-  { center: [1927, 674], radius: 68 + 8 }, // 右上：跳跃
-  { center: [1924, 880], radius: 68 + 8 }, // 右下：翻滚 / 冲刺
-];
-// ====================================
 
 interface ScreenSize {
   readonly width: number;
   readonly height: number;
 }
-interface DeviceScreen extends ScreenSize {
-  readonly scale: number;
-  readonly orientation: string;
-}
 
-/** 一次连点的运行结果，返回给界面显示 */
 interface Report {
   taps: number;
+  points: number;
   screen: string;
   point: string;
   front: string;
@@ -77,26 +60,27 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * 把设备报告的屏幕尺寸校正成「横屏宽 > 高」的坐标系。
- * 少数固件在 landscape 下仍返回竖屏的 width/height，此时必须交换。
- */
-function orientScreen(raw: DeviceScreen): ScreenSize {
-  if (raw.width < raw.height) {
-    return { width: raw.height, height: raw.width };
-  }
-  return { width: raw.width, height: raw.height };
+function orientScreen(raw: {
+  width: number;
+  height: number;
+  orientation: string;
+}): ScreenSize {
+  return raw.width < raw.height
+    ? { width: raw.height, height: raw.width }
+    : { width: raw.width, height: raw.height };
 }
 
-/** 截图坐标 -> 当前屏幕坐标 */
-function px([x, y]: Point, screen: ScreenSize): Point {
-  return [(x * screen.width) / REF_W, (y * screen.height) / REF_H];
-}
-function scale(value: number, screen: ScreenSize): number {
-  return (value * screen.width) / REF_W;
+/** 参考截图坐标 -> 当前屏幕坐标，并加一点随机偏移 */
+function pointOf(p: TapPoint, screen: ScreenSize): Point {
+  const jitter = (JITTER_PX * screen.width) / REF_W;
+  const angle = Math.random() * Math.PI * 2;
+  const distance = jitter * Math.sqrt(Math.random());
+  return [
+    ((p.x + distance * Math.cos(angle)) * screen.width) / REF_W,
+    ((p.y + distance * Math.sin(angle)) * screen.height) / REF_H,
+  ];
 }
 
-/** 可中断的 sleep */
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) return resolve();
@@ -113,35 +97,17 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** 在目标按钮安全区内取一个随机点击点，落入相邻按钮禁区则重采样 */
-function pickPoint(screen: ScreenSize): Point {
-  const [cx, cy] = px(TARGET_REF, screen);
-  const jitter = scale(JITTER_PX, screen);
-  const safe = scale(SAFE_RADIUS_PX, screen);
-  const forbidden: [number, number, number][] = NEIGHBORS_REF.map((n) => {
-    const [nx, ny] = px(n.center, screen);
-    return [nx, ny, scale(n.radius, screen)];
-  });
-
-  for (let i = 0; i < 24; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const distance = jitter * Math.sqrt(Math.random());
-    const point: Point = [
-      cx + distance * Math.cos(angle),
-      cy + distance * Math.sin(angle),
-    ];
-    if (Math.hypot(point[0] - cx, point[1] - cy) > safe) continue;
-    const hitsNeighbor = forbidden.some(
-      ([nx, ny, r]) => Math.hypot(point[0] - nx!, point[1] - ny!) < r!,
-    );
-    if (hitsNeighbor) continue;
-    return point;
-  }
-  return [cx, cy];
-}
-
-/** 连点主循环：全程 await，直到停止条件满足 */
 async function runTaps(signal: AbortSignal, report: Report): Promise<void> {
+  const settings = await readSettings();
+  const active = settings.points.filter(
+    (p) => p.enabled && p.x >= 0 && p.y >= 0,
+  );
+  report.points = active.length;
+  if (active.length === 0) {
+    report.stopReason = "没有已启用且已设置坐标的点位";
+    return;
+  }
+
   let screen: ScreenSize;
   try {
     const info = await device.info({ signal });
@@ -154,8 +120,8 @@ async function runTaps(signal: AbortSignal, report: Report): Promise<void> {
   }
 
   let failures = 0;
+  let index = 0;
   while (!signal.aborted) {
-    // 每次点击前确认前台。读取失败 / 空值不误停，由事件监听兜底。
     const front = await device.foregroundApplication
       .get({ signal })
       .catch(() => "");
@@ -167,8 +133,9 @@ async function runTaps(signal: AbortSignal, report: Report): Promise<void> {
       }
     }
 
-    const point = pickPoint(screen);
-    report.point = `${Math.round(point[0])}, ${Math.round(point[1])}`;
+    const target = active[index % active.length]!;
+    const point = pointOf(target, screen);
+    report.point = `${target.name} (${Math.round(point[0])}, ${Math.round(point[1])})`;
     try {
       await input.tap(point, { signal });
       report.taps += 1;
@@ -183,11 +150,12 @@ async function runTaps(signal: AbortSignal, report: Report): Promise<void> {
         return;
       }
     }
-    await sleep(INTERVAL_MS, signal);
+    index += 1;
+    await sleep(settings.intervalMs, signal);
   }
 }
 
-/** 前台变化即停止：切应用、回主屏、控制中心 / 通知中心、游戏进后台 */
+/** 前台变化即停止 */
 async function watchApps(
   signal: AbortSignal,
   stop: AbortController,
@@ -212,13 +180,12 @@ async function watchApps(
       }
     }
   } catch {
-    // 信号取消 / 设备断开时忽略
+    // 信号取消 / 设备断开
   }
 }
 
 export default defineExtension({
-  // 常驻服务由 Swipt 自动托管，界面用 useService 显示它的状态。
-  // 连点逻辑不放在这里：服务与 Action 是两个独立 JS 引擎，不共享内存。
+  // 常驻服务由 Swipt 自动托管；界面用 useService 显示状态。
   async run({ signal }) {
     await new Promise<void>((resolve) => {
       if (signal.aborted) return resolve();
@@ -230,11 +197,12 @@ export default defineExtension({
     start: defineAction({
       title: "开始自动投掷",
       description:
-        "跳转到洛克王国并开始每秒点击一次投掷按钮；切换应用或拉下控制中心自动停止",
+        "跳转到洛克王国并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止",
       expose: ["shortcuts"],
       async run(_, { signal }) {
         const report: Report = {
           taps: 0,
+          points: 0,
           screen: "",
           point: "",
           front: "",
@@ -243,7 +211,6 @@ export default defineExtension({
         };
         const stop = new AbortController();
         const loopSignal = AbortSignal.any([signal, stop.signal]);
-
         try {
           await device.launchApplication(GAME_BUNDLE_ID, { signal });
         } catch (error) {
@@ -251,15 +218,11 @@ export default defineExtension({
           report.stopReason = "未能切换到游戏";
           return report;
         }
-
-        // 只等动画，不再用 foregroundApplication 的精确匹配当启动门槛：
-        // 该值可能因机型/固件返回不同格式，一旦不匹配就会一次都不点。
         await sleep(LAUNCH_SETTLE_MS, loopSignal);
         report.front =
           (await device.foregroundApplication
             .get({ signal })
             .catch(() => "")) || "(读取失败)";
-
         const watcher = watchApps(
           loopSignal,
           stop,
@@ -271,6 +234,36 @@ export default defineExtension({
         await watcher.catch(() => {});
         if (signal.aborted) report.stopReason = "已被系统终止";
         return report;
+      },
+    }),
+
+    /** 坐标记录：抓一张游戏当前画面，回到设置页后在图上点选位置 */
+    record: defineAction({
+      title: "坐标记录",
+      description: "跳转到洛克王国并抓取当前画面，返回设置页后点图记录坐标",
+      async run(_, { signal }) {
+        await device.launchApplication(GAME_BUNDLE_ID, { signal });
+        await sleep(RECORD_DELAY_MS, signal);
+        const shot = await device.screenshot({ signal });
+        const image = shot.width < shot.height ? shot.rotate(90) : shot;
+        try {
+          if (!(await dataDirectory.exists())) await dataDirectory.create();
+        } catch {
+          // 已存在
+        }
+        await image.save(recordImageFile(), { signal, format: "png" });
+        await writeRecording({
+          width: image.width,
+          height: image.height,
+          time: Date.now(),
+          x: -1,
+          y: -1,
+        });
+        // 回到 Swipt 设置页；失败也不影响，用户手动切回来一样能看到图
+        await device
+          .launchApplication(SWIPT_BUNDLE_ID, { signal })
+          .catch(() => {});
+        return { width: image.width, height: image.height };
       },
     }),
   },

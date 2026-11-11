@@ -6,12 +6,13 @@
     "id": "roco-auto-tap",
     "name": "洛克王国 · 自动投掷",
     "versionCode": 1,
-    "icon": {
-      "color": "orange",
-      "symbol": "hand.tap.fill"
-    },
+    "icon": { "color": "orange", "symbol": "hand.tap.fill" },
     "app": "./src/App.tsx",
     "extension": "./src/extension.ts"
+  },
+  "source": {
+    "name": "My Swiplets",
+    "localizedNames": { "zh-Hans": "我的插件" }
   },
   "scripts": {
     "build": "swipt project build",
@@ -23,6 +24,7 @@
     "@swipt/cli": "0.1.0-nightly.86",
     "@types/react": "~19.3.0",
     "react": "19.3.0",
+    "react-native": "0.88.1",
     "typescript": "^7.0.2"
   }
 }
