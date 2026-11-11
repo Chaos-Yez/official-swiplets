@@ -1,4 +1,4 @@
-// 设置与录制结果的持久化。
+// 设置与坐标记录结果的持久化。
 // Swipt 的 Action 与 UI 是两个独立 JS 引擎，内存不共享；
 // dataDirectory 按 swiplet 目录落地，两边读写同一份文件即可通信。
 import { dataDirectory } from "@swipt/api/file-system";
@@ -7,6 +7,31 @@ import { dataDirectory } from "@swipt/api/file-system";
 export const REF_W = 2217;
 export const REF_H = 1024;
 export const MAX_POINTS = 8;
+/** 坐标记录截图保留时长：10 分钟后自动销毁 */
+export const RECORD_TTL_MS = 10 * 60 * 1000;
+
+const SETTINGS_FILE = "settings.json";
+const RECORD_FILE = "record.json";
+/** code=6 及更早版本使用的固定截图名，清理时一并删除 */
+export const LEGACY_RECORD_IMAGE = "record.png";
+
+const CN_NUM = ["一", "二", "三", "四", "五", "六", "七", "八"];
+
+/** 点位统一按序号命名，拖拽排序后名称始终与顺序一致 */
+export function pointName(index: number): string {
+  return `点位${CN_NUM[index] ?? index + 1}`;
+}
+
+/**
+ * 每张截图用带时间戳的独立文件名，写入前先清掉旧的。
+ * 独立文件名可绕开 RN Image 对同一 file:// uri 的缓存，避免「覆盖后还显示上一张」。
+ */
+export function recordImageName(time: number): string {
+  return `record-${time}.png`;
+}
+
+export const recordImageFile = (name: string) =>
+  dataDirectory.file(name || LEGACY_RECORD_IMAGE);
 
 export interface TapPoint {
   id: string;
@@ -22,28 +47,29 @@ export interface Settings {
   points: TapPoint[];
 }
 
-/** 最近一次录制的画面与选中的坐标 */
+/** 最近一次记录的画面与选中的坐标 */
 export interface Recording {
   width: number;
   height: number;
   time: number;
+  /** 截图文件名（旧记录可能没有此字段） */
+  image: string;
   /** 参考截图坐标系；-1 表示尚未点选 */
   x: number;
   y: number;
 }
 
-const settingsFile = () => dataDirectory.file("settings.json");
-const recordFile = () => dataDirectory.file("record.json");
-export const recordImageFile = () => dataDirectory.file("record.png");
+const settingsFile = () => dataDirectory.file(SETTINGS_FILE);
+const recordFile = () => dataDirectory.file(RECORD_FILE);
 
 export function defaultSettings(): Settings {
   return {
     intervalMs: 1000,
     points: [
-      { id: "p1", name: "投掷", x: 1760, y: 780, enabled: true },
-      { id: "p2", name: "点位 2", x: -1, y: -1, enabled: false },
-      { id: "p3", name: "点位 3", x: -1, y: -1, enabled: false },
-      { id: "p4", name: "点位 4", x: -1, y: -1, enabled: false },
+      { id: "p1", name: pointName(0), x: 1760, y: 780, enabled: true },
+      { id: "p2", name: pointName(1), x: -1, y: -1, enabled: false },
+      { id: "p3", name: pointName(2), x: -1, y: -1, enabled: false },
+      { id: "p4", name: pointName(3), x: -1, y: -1, enabled: false },
     ],
   };
 }
@@ -66,10 +92,8 @@ function sanitize(value: unknown): Settings {
       const y = Number(item.y);
       return {
         id: typeof item.id === "string" ? item.id : `p${index + 1}`,
-        name:
-          typeof item.name === "string" && item.name !== ""
-            ? item.name
-            : `点位 ${index + 1}`,
+        // 旧的「投掷」等名称统一改回序号命名
+        name: pointName(index),
         x: Number.isFinite(x) && x >= 0 ? Math.round(x) : -1,
         y: Number.isFinite(y) && y >= 0 ? Math.round(y) : -1,
         enabled: Boolean(item.enabled),
@@ -83,6 +107,27 @@ async function ensureDirectory(): Promise<void> {
     if (!(await dataDirectory.exists())) await dataDirectory.create();
   } catch {
     // 宿主已创建或并发创建，忽略
+  }
+}
+
+/**
+ * 销毁坐标记录：删掉记录文件与所有截图（含旧版 record.png）。
+ * 每次抓新图前先调用，磁盘上永远只存在一张截图，不会越用越大。
+ */
+export async function clearRecording(): Promise<void> {
+  try {
+    const entries = await dataDirectory.list();
+    for (const entry of entries) {
+      if (
+        entry.name === RECORD_FILE ||
+        entry.name === LEGACY_RECORD_IMAGE ||
+        /^record-\d+\.png$/.test(entry.name)
+      ) {
+        await entry.delete().catch(() => {});
+      }
+    }
+  } catch {
+    // 目录不存在 / 读取失败：没有需要清理的东西
   }
 }
 
@@ -100,21 +145,34 @@ export async function writeSettings(settings: Settings): Promise<void> {
 }
 
 export async function readRecording(): Promise<Recording | null> {
+  let raw: Record<string, unknown>;
   try {
-    const raw = JSON.parse(await recordFile().text());
-    if (typeof raw?.width !== "number" || typeof raw?.height !== "number") {
-      return null;
-    }
-    return {
-      width: raw.width,
-      height: raw.height,
-      time: Number(raw.time) || 0,
-      x: Number.isFinite(Number(raw.x)) ? Number(raw.x) : -1,
-      y: Number.isFinite(Number(raw.y)) ? Number(raw.y) : -1,
-    };
+    raw = JSON.parse(await recordFile().text()) as Record<string, unknown>;
   } catch {
     return null;
   }
+  const width: unknown = raw.width;
+  const height: unknown = raw.height;
+  if (typeof width !== "number" || typeof height !== "number") {
+    return null;
+  }
+  const time = Number(raw.time) || 0;
+  // 超过 10 分钟立即销毁，不把过期截图留在磁盘上、也不显示在界面上
+  if (time <= 0 || Date.now() - time > RECORD_TTL_MS) {
+    await clearRecording();
+    return null;
+  }
+  return {
+    width,
+    height,
+    time,
+    image:
+      typeof raw.image === "string" && raw.image !== ""
+        ? raw.image
+        : LEGACY_RECORD_IMAGE,
+    x: Number.isFinite(Number(raw.x)) ? Number(raw.x) : -1,
+    y: Number.isFinite(Number(raw.y)) ? Number(raw.y) : -1,
+  };
 }
 
 export async function writeRecording(recording: Recording): Promise<void> {

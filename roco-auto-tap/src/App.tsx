@@ -1,4 +1,4 @@
-// 设置页：顶部大号「开始连点」→ 坐标记录 → 点击间隔 → 可勾选 / 可拖拽排序的点击点。
+// 设置页：顶部居中的大号「开始连点」→ 坐标记录 → 点击间隔 → 可勾选 / 可拖拽排序的点击点。
 // 配置直接读写 dataDirectory，与 Action 引擎共享。
 import {
   Button,
@@ -10,6 +10,7 @@ import {
   Picker,
   RNHostView,
   Section,
+  Spacer,
   Text,
   TextField,
   Toggle,
@@ -21,20 +22,24 @@ import {
   controlSize,
   font,
   foregroundStyle,
+  frame,
   navigationTitle,
   tag,
   textSelection,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { useEffect, useState } from "react";
-import { actions, exit, useService } from "@swipt/api/swiplet";
+import { actions, exit } from "@swipt/api/swiplet";
 import { PointPicker } from "./PointPicker";
 import {
   clampInterval,
+  clearRecording,
   MAX_POINTS,
+  pointName,
   readRecording,
   readSettings,
   recordImageFile,
+  RECORD_TTL_MS,
   REF_H,
   REF_W,
   writeRecording,
@@ -48,6 +53,11 @@ const { start, record } = actions<typeof extension>();
 
 const caption = [
   font({ textStyle: "caption" }),
+  foregroundStyle({ type: "hierarchical", style: "secondary" }),
+];
+
+const dragHint = [
+  font({ textStyle: "caption", weight: "semibold" }),
   foregroundStyle({ type: "hierarchical", style: "secondary" }),
 ];
 
@@ -71,7 +81,6 @@ const phaseText: Record<Phase, string> = {
 };
 
 export default function App() {
-  const service = useService<typeof extension>();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [coordX, setCoordX] = useState("");
@@ -94,19 +103,31 @@ export default function App() {
     }, () => setRecording(null));
   }, []);
 
+  // 截图只保留 10 分钟：到点销毁文件、清掉红色标记
+  useEffect(() => {
+    if (recording === null) return;
+    const remain = RECORD_TTL_MS - (Date.now() - recording.time);
+    if (remain <= 0) {
+      clearRecording().catch(() => {});
+      setRecording(null);
+      setCoordX("");
+      setCoordY("");
+      return;
+    }
+    const timer = setTimeout(() => {
+      clearRecording().catch(() => {});
+      setRecording(null);
+      setCoordX("");
+      setCoordY("");
+      setDetail("截图已超过 10 分钟，已自动销毁。需要时重新点「坐标记录」。");
+    }, remain);
+    return () => clearTimeout(timer);
+  }, [recording?.time]);
+
   const update = (next: Settings) => {
     setSettings(next);
     writeSettings(next).catch((error: Error) => setDetail(error.message));
   };
-
-  const serviceText =
-    service.status === "running"
-      ? "运行中"
-      : service.status === "failed"
-        ? `异常：${service.error ?? "未知错误"}`
-        : service.status === "stopped"
-          ? "已停止"
-          : "启动中";
 
   const begin = () => {
     if (busy || settings === null) return;
@@ -146,7 +167,7 @@ export default function App() {
         setCoordX("");
         setCoordY("");
         setDetail(
-          `已记录画面 ${shot.width}×${shot.height}；在下方画面上点一下即可取得坐标。`,
+          `已记录画面 ${shot.width}×${shot.height}；在下方画面上点一下会出现红色标记与坐标。`,
         );
       },
       (error: Error) => {
@@ -166,12 +187,15 @@ export default function App() {
       width: recording?.width ?? REF_W,
       height: recording?.height ?? REF_H,
       time: recording?.time ?? Date.now(),
+      image: recording?.image ?? "",
       x,
       y,
     };
     setRecording(next);
     writeRecording(next).catch(() => {});
-    setDetail(`已记录坐标 (${x}, ${y})，长按坐标文字可复制，也可直接修改 X / Y。`);
+    setDetail(
+      `已标记坐标 (${x}, ${y})：画面上会出现红色标记，长按坐标文字可复制，也可直接修改 X / Y。`,
+    );
   };
 
   /** 把当前 X/Y 保存到选中的点位（或新增一个点位） */
@@ -198,7 +222,7 @@ export default function App() {
       }
       points.push({
         id: `p${Date.now()}`,
-        name: `点位 ${points.length + 1}`,
+        name: pointName(points.length),
         x,
         y,
         enabled: false,
@@ -208,18 +232,6 @@ export default function App() {
     }
     update({ ...settings, points });
     setDetail(`坐标 (${x}, ${y}) 已保存，勾选启用后即会参与点击。`);
-  };
-
-  const move = (from: number, to: number) => {
-    if (settings === null) return;
-    const points = [...settings.points];
-    if (from < 0 || to < 0 || from >= points.length || to >= points.length) {
-      return;
-    }
-    const [item] = points.splice(from, 1);
-    if (item === undefined) return;
-    points.splice(to, 0, item);
-    update({ ...settings, points });
   };
 
   const onMove = (sources: number[], destination: number) => {
@@ -245,7 +257,7 @@ export default function App() {
         ...settings.points,
         {
           id: `p${Date.now()}`,
-          name: `点位 ${settings.points.length + 1}`,
+          name: pointName(settings.points.length),
           x: -1,
           y: -1,
           enabled: false,
@@ -265,12 +277,28 @@ export default function App() {
     ]);
   }
 
+  // 红色标记跟随 X / Y 输入框，手动改坐标也能立刻看到位置
+  const parsedX = Number(coordX);
+  const parsedY = Number(coordY);
+  const hasMarker =
+    coordX !== "" &&
+    coordY !== "" &&
+    Number.isFinite(parsedX) &&
+    Number.isFinite(parsedY) &&
+    parsedX >= 0 &&
+    parsedY >= 0 &&
+    parsedX <= REF_W &&
+    parsedY <= REF_H;
+  const marker = hasMarker
+    ? { x: parsedX / REF_W, y: parsedY / REF_H }
+    : null;
+
   return (
     <Host style={{ flex: 1 }}>
       <NavigationStack>
         <Toolbar modifiers={[navigationTitle("自动投掷")]}>
           <List>
-            {/* 最上方：放大后的主按钮 + 状态 */}
+            {/* 最上方：居中、放大的主按钮 */}
             <Section
               footer={
                 <Text modifiers={caption}>
@@ -280,20 +308,21 @@ export default function App() {
                 </Text>
               }
             >
-              <Button
-                label="开始连点"
-                systemImage="play.fill"
-                onPress={begin}
-                modifiers={[
-                  buttonStyle("borderedProminent"),
-                  tint("orange"),
-                  controlSize("extraLarge"),
-                  font({ size: 20, weight: "semibold" }),
-                ]}
-              />
-              <LabeledContent label="后台服务">
-                <Text modifiers={caption}>{serviceText}</Text>
-              </LabeledContent>
+              <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                <Spacer />
+                <Button
+                  label="开始连点"
+                  systemImage="play.fill"
+                  onPress={begin}
+                  modifiers={[
+                    buttonStyle("borderedProminent"),
+                    tint("orange"),
+                    controlSize("extraLarge"),
+                    font({ size: 20, weight: "semibold" }),
+                  ]}
+                />
+                <Spacer />
+              </HStack>
               <LabeledContent label="连点状态">
                 <Text>{phaseText[phase]}</Text>
               </LabeledContent>
@@ -304,8 +333,8 @@ export default function App() {
               title="坐标记录"
               footer={
                 <Text modifiers={caption}>
-                  跳转游戏后 3 秒抓取当前画面并自动返回本页；在画面上点一下即可记录位置。
-                  坐标文字长按可复制，也可以直接改 X / Y 后保存为点位。
+                  跳转游戏后 3 秒抓取当前画面并自动返回本页；在画面上点一下会出现红色标记与坐标。
+                  截图只保留 10 分钟，到点自动销毁；再次抓取会覆盖前一张，不会越用越占空间。
                 </Text>
               }
             >
@@ -319,9 +348,15 @@ export default function App() {
                 <RNHostView matchContents>
                   <PointPicker
                     key={recording.time}
-                    uri={recordImageFile().uri}
+                    uri={recordImageFile(recording.image).uri}
                     width={recording.width}
                     height={recording.height}
+                    marker={marker}
+                    label={
+                      coordX === "" || coordY === ""
+                        ? ""
+                        : `${coordX}, ${coordY}`
+                    }
                     onPick={pick}
                   />
                 </RNHostView>
@@ -430,11 +465,15 @@ export default function App() {
               title="点击点"
               footer={
                 <Text modifiers={caption}>
-                  默认只有「投掷」启用。勾选其它点位即参与点击，按这里的顺序依次执行；
-                  长按行可拖动排序，也可以用 ↑ ↓ 调整，左滑可删除。未设置坐标的点位会自动跳过。
+                  默认只有点位一启用。勾选其它点位即参与点击，按这里的顺序依次执行；
+                  未设置坐标的点位会自动跳过。
                 </Text>
               }
             >
+              {/* 拖动提示放在最前头 */}
+              <Text modifiers={dragHint}>
+                ≡ 按住行首把手可拖动调整点击顺序，左滑可删除
+              </Text>
               {settings !== null && (
                 <List.ForEach
                   data={settings.points}
@@ -450,6 +489,10 @@ export default function App() {
                 >
                   {({ item, index }) => (
                     <HStack>
+                      <Text modifiers={dragHint}>≡</Text>
+                      <Text modifiers={caption}>
+                        {item.x >= 0 ? `(${item.x}, ${item.y})` : "未设置"}
+                      </Text>
                       <Toggle
                         label={item.name}
                         isOn={item.enabled}
@@ -458,25 +501,6 @@ export default function App() {
                           points[index] = { ...points[index]!, enabled };
                           update({ ...settings, points });
                         }}
-                      />
-                      <Text modifiers={caption}>
-                        {item.x >= 0 ? `${item.x}, ${item.y}` : "未设置"}
-                      </Text>
-                      <Button
-                        label="↑"
-                        onPress={() => move(index, index - 1)}
-                        modifiers={[
-                          buttonStyle("borderless"),
-                          controlSize("mini"),
-                        ]}
-                      />
-                      <Button
-                        label="↓"
-                        onPress={() => move(index, index + 1)}
-                        modifiers={[
-                          buttonStyle("borderless"),
-                          controlSize("mini"),
-                        ]}
                       />
                     </HStack>
                   )}

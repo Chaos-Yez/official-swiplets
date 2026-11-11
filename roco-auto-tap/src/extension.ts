@@ -2,6 +2,7 @@
 // ---------------------------------------------------------------------------
 // start  : 跳转 com.tencent.nrc → 按「已启用点位」的顺序循环点击，间隔可配置。
 // record : 跳转游戏 → 抓一张当前画面 → 回到 Swipt，供设置页点选并「记录坐标」。
+//          抓图前先销毁上一张，截图 10 分钟后由设置页/readRecording 自动删除。
 //
 // 【架构要点，别再改回去】
 // internal/automation/engine.go: Host.execute() 每次执行 Action 都会 newEngine()
@@ -19,8 +20,10 @@ import { dataDirectory } from "@swipt/api/file-system";
 import * as input from "@swipt/api/input";
 import { defineAction, defineExtension } from "@swipt/api/swiplet";
 import {
+  clearRecording,
   readSettings,
   recordImageFile,
+  recordImageName,
   REF_H,
   REF_W,
   writeRecording,
@@ -185,7 +188,7 @@ async function watchApps(
 }
 
 export default defineExtension({
-  // 常驻服务由 Swipt 自动托管；界面用 useService 显示状态。
+  // 常驻服务由 Swipt 自动托管；界面不再显示后台服务开关。
   async run({ signal }) {
     await new Promise<void>((resolve) => {
       if (signal.aborted) return resolve();
@@ -251,11 +254,19 @@ export default defineExtension({
         } catch {
           // 已存在
         }
-        await image.save(recordImageFile(), { signal, format: "png" });
+        // 先销毁旧截图与旧记录，再写新图：磁盘上永远只剩当前这一张
+        await clearRecording();
+        const time = Date.now();
+        const imageName = recordImageName(time);
+        await image.save(recordImageFile(imageName), {
+          signal,
+          format: "png",
+        });
         await writeRecording({
           width: image.width,
           height: image.height,
-          time: Date.now(),
+          time,
+          image: imageName,
           x: -1,
           y: -1,
         });
