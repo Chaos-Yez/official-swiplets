@@ -1,49 +1,82 @@
-// Swipt 内的状态页。
-// 开关本身由快捷指令 / CLI / MCP 调用 Action 完成（见 extension.ts 末尾说明），
-// 这里只显示运行状态，避免要求你在游戏之外再点一次屏幕。
-import { Host, Text, VStack } from "@expo/ui/swift-ui";
-import { useEffect, useState } from "react";
-import { actions } from "@swipt/api/swiplet";
+// Swipt 内的控制页：装好插件后必须在这里（或快捷指令）点一次「开始」才会连点。
+import { Button, Host, Text, Toggle, VStack } from "@expo/ui/swift-ui";
+import { useCallback, useEffect, useState } from "react";
+import { actions, useService } from "@swipt/api/swiplet";
 import type extension from "./extension";
 
-const { status } = actions<typeof extension>();
+const { start, stop, toggle, tapOnce, status } = actions<typeof extension>();
+type Snapshot = Awaited<ReturnType<typeof status>>;
 
 export default function App() {
-  const [state, setState] = useState("读取中…");
+  const service = useService<typeof extension>();
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [message, setMessage] = useState("");
+
+  const refresh = useCallback(() => {
+    status().then(setSnap, (error: Error) => {
+      setMessage(`状态读取失败：${error.message}`);
+    });
+  }, []);
 
   useEffect(() => {
-    let alive = true;
-    const refresh = () => {
-      status().then(
-        (s) => {
-          if (!alive) return;
-          setState(
-            s.running
-              ? `运行中 · 本次已点击 ${s.taps} 次`
-              : `已停止 · 本次累计 ${s.taps} 次`,
-          );
-        },
-        (error: Error) => {
-          if (alive) setState(`状态读取失败：${error.message}`);
-        },
-      );
-    };
     refresh();
     const timer = setInterval(refresh, 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  const call = (fn: () => Promise<Snapshot>, label: string) => {
+    fn().then(
+      (s) => {
+        setSnap(s);
+        setMessage(`${label} 已完成`);
+      },
+      (error: Error) => setMessage(`${label} 失败：${error.message}`),
+    );
+  };
 
   return (
     <Host>
       <VStack>
         <Text>洛克王国 · 自动投掷</Text>
-        <Text>{state}</Text>
-        <Text>开 / 关：快捷指令里的「开始自动投掷」「停止自动投掷」</Text>
-        <Text>每 1 秒点一次投掷按钮，随机偏移 ±10px，已避开相邻按钮</Text>
-        <Text>目标坐标（2217×1024 参考图）：(1760, 780)</Text>
+        <Toggle
+          label="后台服务（建议打开）"
+          isOn={service.enabled}
+          onIsOnChange={(enabled) => service.setEnabled(enabled)}
+        />
+        <Text>
+          {`服务状态：${service.status}${service.error ? ` / ${service.error}` : ""}`}
+        </Text>
+
+        <Button label="开始（连点）" onPress={() => call(() => start(), "开始")} />
+        <Button label="停止" onPress={() => call(() => stop(), "停止")} />
+        <Button label="切换 开/关" onPress={() => call(() => toggle(), "切换")} />
+        <Button
+          label="测试点击一次"
+          onPress={() => call(() => tapOnce(), "测试")}
+        />
+
+        <Text>
+          {snap === null
+            ? "读取中…"
+            : snap.running
+              ? `运行中 · 本次已点击 ${snap.taps} 次`
+              : `已停止 · 本次累计 ${snap.taps} 次`}
+        </Text>
+        <Text>{`错误：${snap?.error || "无"}`}</Text>
+        <Text>
+          {snap?.screen
+            ? `屏幕：${snap.screen.width}×${snap.screen.height} ${snap.screen.orientation} scale=${snap.screen.scale}`
+            : "屏幕：尚未读取（点一次「测试点击一次」）"}
+        </Text>
+        <Text>
+          {snap?.point
+            ? `最近点击点：${Math.round(snap.point[0])}, ${Math.round(snap.point[1])}`
+            : "最近点击点：无"}
+        </Text>
+        {message !== "" ? <Text>{message}</Text> : null}
+
+        <Text>点「开始」后请立刻切回游戏画面；连点在后台每秒一次。</Text>
+        <Text>也可在快捷指令 / 轻点背面里搜索「自动投掷」绑定开关。</Text>
       </VStack>
     </Host>
   );
