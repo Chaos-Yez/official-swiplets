@@ -80,7 +80,7 @@
       ],
       "url": "skip-chinese-ads.swiplet",
       "size": 160644,
-      "sha256": "1229bf99174b8c183f6315f00f424f87c8be4edcbc2b2817d0cf7834dc0d186e"
+      "sha256": "32282fe4a54d91df4e1c058ffdf03d8d7592c2b88ac3460e64dfb149fde0af71"
     },
     {
       "id": "switch-app-store-account",
@@ -181,7 +181,7 @@
       ],
       "url": "switch-app-store-account.swiplet",
       "size": 19073,
-      "sha256": "e1df0c8d865106f642783a2df75bbc708cb62042fb6636c92937fde760615f41"
+      "sha256": "6c306b3b05175c8d1c54a49bf81d42687842ddf6b97747e56a1522c7d3dca347"
     },
     {
       "id": "simulate-location",
@@ -277,13 +277,13 @@
       ],
       "url": "simulate-location.swiplet",
       "size": 14919,
-      "sha256": "0d51b7b93d4888bf3c49db4a38eec04de437ab9e340d193fab2ca8e484393a2f"
+      "sha256": "3996f7c4fb7eb5a187dea9b02bffd8ecae8276ae4237a5868af532901cbc07d7"
     },
     {
       "id": "roco-auto-tap",
       "name": "洛克王国 · 自动投掷",
       "version": "0.1.0-nightly",
-      "versionCode": 4,
+      "versionCode": 5,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -302,8 +302,8 @@
         }
       ],
       "url": "roco-auto-tap.swiplet",
-      "size": 8230,
-      "sha256": "0d05ad1108c5b6f80fb18f823a28c7880515c44cffe15bffb0d7f756cf4afed6"
+      "size": 9280,
+      "sha256": "c41c63e458406a83ec727fbf7fc93616390eb747fa8ce64fa8a078883ea45dd8"
     }
   ]
 }
