@@ -1,15 +1,19 @@
 // 洛克王国 · 自动投掷 (Swiplet)
 // ---------------------------------------------------------------------------
-// 启动后每 1 秒点击一次右下角「投掷」按钮，点击点带细微随机偏移，并避开相邻按钮。
+// 一键流程：跳转 com.tencent.nrc → 等游戏进入前台 → 立即每秒点击一次右下角
+// 「投掷」按钮（带细微随机偏移，避开相邻按钮）。
+// 停止：切换应用、拉下控制中心 / 通知中心、回到主屏等任何前台变化都会停止，
+//       不再提供停止 / 切换 / 测试 / 状态等 Action 和 UI 条目。
 //
-// 触发：Swipt 内插件页的「开始 / 停止」按钮，或 iOS 快捷指令 / 轻点背面。
-//       安装后不会自动开始，必须手动调用一次 start / toggle。
-//
-// API 依据（官方 api/*.d.ts 与 official-swiplets 源码逐字核对）：
-//   defineAction({ title, expose?, run }) —— expose 默认空，要出现在快捷指令
-//     必须显式写 expose: ["shortcuts"]
-//   input.tap(point, { signal }) / device.info({signal}).screen
-//   device.info().screen = { width, height, scale, orientation }
+// API 依据（swipt/api/*.d.ts 与 internal/device/foreground.go 逐字核对）：
+//   device.launchApplication(bundleId, { signal, url?, restart? }): Promise<void>
+//   device.foregroundApplication.get({ signal }): Promise<string>
+//   device.applicationEvents({ signal }): AsyncIterable<{type:"launch"|"foreground"|"background", bundleId, ...}>
+//   device.info({signal}).screen = { width, height, scale, orientation }
+//   input.tap(point, { signal })
+//   Swipt 底层用 com.apple.mobile.SubstantialTransition 判定前台变化，
+//   源码注释明确包含「to and from the home screen, Notification Center and
+//   the app switcher」——控制中心属于同类 SpringBoard 覆盖层。
 // ---------------------------------------------------------------------------
 
 import type { Point } from "@swipt/api";
@@ -18,21 +22,25 @@ import * as input from "@swipt/api/input";
 import { defineAction, defineExtension } from "@swipt/api/swiplet";
 
 // ============ 只需改这里 ============
+/** 洛克王国的 bundle id */
+const GAME_BUNDLE_ID = "com.tencent.nrc";
 /** 参考截图分辨率（横屏游戏截图） */
 const REF_W = 2217;
 const REF_H = 1024;
-
 /** 截图里「投掷」按钮圆心（白色手掌 + 星形的大圆） */
 const TARGET_REF: Point = [1760, 780];
 /** 目标按钮半径约 94px；点击点限制在此半径内 */
 const SAFE_RADIUS_PX = 40;
-
 /** 每次点击的随机偏移半径（截图像素，约 ±10px） */
 const JITTER_PX = 10;
 /** 点击间隔（毫秒） */
 const INTERVAL_MS = 1000;
-/** 间隔随机抖动 ±ms。0 = 严格 1 秒；建议 60~120 更像人手、也更不易被识别 */
+/** 间隔随机抖动 ±ms。0 = 严格 1 秒 */
 const INTERVAL_JITTER_MS = 0;
+/** 跳转后等待游戏进入前台的最长时间 */
+const LAUNCH_TIMEOUT_MS = 4000;
+/** 启动后的事件宽限期，避免切换动画里的系统 UI 事件误停 */
+const START_GRACE_MS = 500;
 
 /** 相邻按钮禁区（截图坐标，半径已加 8px 缓冲） */
 const NEIGHBORS_REF: { center: Point; radius: number }[] = [
@@ -40,16 +48,6 @@ const NEIGHBORS_REF: { center: Point; radius: number }[] = [
   { center: [1927, 674], radius: 68 + 8 }, // 右上：跳跃
   { center: [1924, 880], radius: 68 + 8 }, // 右下：翻滚 / 冲刺
 ];
-
-/**
- * 是否只在「游戏」前台时点击。
- * 默认 false —— 因为如果在 Swipt 内点「开始」，此刻的前台是 Swipt 自己，
- * 会被误记成游戏；切回真游戏后守卫一直判定「不在游戏」而永久暂停。
- * 想启用守卫：把 GAME_BUNDLE_ID 填成洛克王国的 bundle id，再把这里改成 true。
- */
-const ONLY_WHEN_GAME_FOREGROUND = false;
-/** 洛克王国的 bundle id（留空 = 取启动瞬间的前台应用） */
-const GAME_BUNDLE_ID = "";
 // ====================================
 
 interface ScreenSize {
@@ -62,19 +60,11 @@ interface DeviceScreen extends ScreenSize {
 }
 
 let loop: AbortController | null = null;
-let watcher: AbortController | null = null;
-let foregroundApp = "";
-let gameApp = "";
-let tapCount = 0;
-let lastError = "";
-let currentScreen: DeviceScreen | null = null;
-let lastPoint: Point | null = null;
-let deviceReady = false;
+let graceUntil = 0;
 
 /**
  * 把设备报告的屏幕尺寸校正成「横屏宽 > 高」的坐标系。
- * 少数固件在 landscape 下仍返回竖屏的 width/height，此时必须交换，
- * 否则归一化后的点击点会整套落在屏幕左上角之外。
+ * 少数固件在 landscape 下仍返回竖屏的 width/height，此时必须交换。
  */
 function orientScreen(raw: DeviceScreen): ScreenSize {
   if (raw.orientation === "landscape" && raw.width < raw.height) {
@@ -127,7 +117,7 @@ function pickPoint(screen: ScreenSize): Point {
     ];
     if (Math.hypot(point[0] - cx, point[1] - cy) > safe) continue;
     const hitsNeighbor = forbidden.some(
-      ([nx, ny, r]) => Math.hypot(point[0] - nx, point[1] - ny) < r,
+      ([nx, ny, r]) => Math.hypot(point[0] - nx!, point[1] - ny!) < r!,
     );
     if (hitsNeighbor) continue;
     return point;
@@ -135,52 +125,39 @@ function pickPoint(screen: ScreenSize): Point {
   return [cx, cy];
 }
 
-/** 监听前后台切换（只在显式启用守卫时才影响点击） */
-function ensureWatcher(): void {
-  if (watcher !== null) return;
-  const controller = new AbortController();
-  watcher = controller;
-  const { signal } = controller;
-  (async () => {
-    try {
-      for await (const event of device.applicationEvents({ signal })) {
-        if (event.type === "foreground") foregroundApp = event.bundleId;
-        else if (event.type === "background" && foregroundApp === event.bundleId)
-          foregroundApp = "";
-      }
-    } catch (error) {
-      if (!signal.aborted) lastError = String(error);
-    }
-  })().catch(() => {});
+/** 跳转后轮询前台，确认游戏真的显示出来了再开始点击 */
+async function waitForGame(signal: AbortSignal): Promise<boolean> {
+  const deadline = Date.now() + LAUNCH_TIMEOUT_MS;
+  while (!signal.aborted && Date.now() < deadline) {
+    const front = await device.foregroundApplication
+      .get({ signal })
+      .catch(() => "");
+    if (front === GAME_BUNDLE_ID) return true;
+    await sleep(100, signal);
+  }
+  return false;
 }
 
-async function readScreen(signal: AbortSignal): Promise<ScreenSize> {
-  const info = await device.info({ signal });
-  currentScreen = info.screen;
-  deviceReady = true;
-  return orientScreen(info.screen);
+function stopLoop(): void {
+  if (loop === null) return;
+  loop.abort();
+  loop = null;
 }
 
 async function runLoop(signal: AbortSignal): Promise<void> {
-  const screen = await readScreen(signal);
+  const info = await device.info({ signal });
+  const screen = orientScreen(info.screen);
   while (!signal.aborted) {
-    if (
-      ONLY_WHEN_GAME_FOREGROUND &&
-      gameApp !== "" &&
-      foregroundApp !== gameApp
-    ) {
-      await sleep(200, signal);
-      continue;
-    }
+    // 每次点击前再确认一次前台：切应用 / 系统覆盖层都会让这里不成立。
+    // 读取失败时不误停（视为仍在游戏），由事件监听兜底。
+    const front = await device.foregroundApplication
+      .get({ signal })
+      .catch(() => GAME_BUNDLE_ID);
+    if (front !== GAME_BUNDLE_ID) break;
     try {
-      const point = pickPoint(screen);
-      lastPoint = point;
-      await input.tap(point, { signal });
-      tapCount++;
-      lastError = "";
+      await input.tap(pickPoint(screen), { signal });
     } catch (error) {
       if (signal.aborted) break;
-      lastError = String(error);
     }
     const jitter =
       INTERVAL_JITTER_MS === 0
@@ -190,51 +167,40 @@ async function runLoop(signal: AbortSignal): Promise<void> {
   }
 }
 
-function startLoop(): boolean {
-  if (loop !== null) return false;
-  ensureWatcher();
-  lastError = "";
-  gameApp = GAME_BUNDLE_ID || foregroundApp;
+function startLoop(): void {
+  stopLoop(); // 重复触发不会叠加循环
   const controller = new AbortController();
   loop = controller;
+  graceUntil = Date.now() + START_GRACE_MS;
   runLoop(controller.signal)
-    .catch((error) => {
-      lastError = String(error);
-    })
+    .catch(() => {})
     .finally(() => {
       if (loop === controller) loop = null;
     });
-  return true;
 }
 
-function stopLoop(): boolean {
-  if (loop === null) return false;
-  loop.abort();
-  loop = null;
-  return true;
-}
-
-function snapshot() {
-  return {
-    running: loop !== null,
-    taps: tapCount,
-    intervalMs: INTERVAL_MS,
-    jitterPx: JITTER_PX,
-    target: TARGET_REF,
-    gameApp,
-    foregroundApp,
-    guarded: ONLY_WHEN_GAME_FOREGROUND && gameApp !== "",
-    deviceReady,
-    screen: currentScreen,
-    point: lastPoint,
-    error: lastError,
-  };
+/** 前台变化即停止：切应用、回主屏、控制中心 / 通知中心、App 切换器 */
+async function watchApps(signal: AbortSignal): Promise<void> {
+  try {
+    for await (const event of device.applicationEvents({ signal })) {
+      if (loop === null || Date.now() < graceUntil) continue;
+      if (
+        (event.type === "launch" && event.bundleId !== GAME_BUNDLE_ID) ||
+        (event.type === "foreground" && event.bundleId !== GAME_BUNDLE_ID) ||
+        (event.type === "background" && event.bundleId === GAME_BUNDLE_ID)
+      ) {
+        stopLoop();
+      }
+    }
+  } catch {
+    // 服务退出 / 设备断开时忽略
+  }
 }
 
 export default defineExtension({
-  // 服务保持存活，供 Swipt 把 Action 暴露给快捷指令与后台运行
+  // Swipt 自身托管服务生命周期，UI 不需要也不提供后台服务开关。
   async run({ signal }) {
-    ensureWatcher();
+    watchApps(signal).catch(() => {});
     await new Promise<void>((resolve) => {
       if (signal.aborted) return resolve();
       signal.addEventListener("abort", () => resolve(), { once: true });
@@ -244,53 +210,16 @@ export default defineExtension({
   actions: {
     start: defineAction({
       title: "开始自动投掷",
-      description: "每秒点击一次投掷按钮，带随机偏移并避开相邻按钮",
-      expose: ["shortcuts"],
-      async run() {
-        startLoop();
-        return snapshot();
-      },
-    }),
-
-    stop: defineAction({
-      title: "停止自动投掷",
-      expose: ["shortcuts"],
-      async run() {
-        stopLoop();
-        return snapshot();
-      },
-    }),
-
-    toggle: defineAction({
-      title: "切换自动投掷",
-      expose: ["shortcuts"],
-      async run() {
-        if (loop === null) startLoop();
-        else stopLoop();
-        return snapshot();
-      },
-    }),
-
-    /** 只点一次，用来确认坐标 / 点击权限是否正常 */
-    tapOnce: defineAction({
-      title: "测试点击一次",
+      description:
+        "跳转到洛克王国并开始每秒点击一次投掷按钮；切换应用或拉下控制中心自动停止",
       expose: ["shortcuts"],
       async run(_, { signal }) {
-        const screen = await readScreen(signal);
-        const point = pickPoint(screen);
-        lastPoint = point;
-        await input.tap(point, { signal });
-        tapCount++;
-        lastError = "";
-        return snapshot();
-      },
-    }),
-
-    status: defineAction({
-      title: "自动投掷状态",
-      expose: ["shortcuts"],
-      async run() {
-        return snapshot();
+        await device.launchApplication(GAME_BUNDLE_ID, { signal });
+        if (!(await waitForGame(signal))) {
+          throw new Error(`未能切换到 ${GAME_BUNDLE_ID}`);
+        }
+        startLoop();
+        return { started: true };
       },
     }),
   },
