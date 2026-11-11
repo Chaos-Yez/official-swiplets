@@ -36,7 +36,7 @@ jobs:
         with:
           bun-version: 1.4.4
       - name: Install
-        run: bun install --frozen-lockfile
+        run: bun install
       - name: Check
         run: bun run check
       - name: Set versions
@@ -152,7 +152,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Install
-        run: bun install --frozen-lockfile
+        run: bun install
       - name: Build
         run: |-
           bun run build
