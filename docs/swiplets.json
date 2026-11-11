@@ -5,285 +5,10 @@
   },
   "swiplets": [
     {
-      "id": "skip-chinese-ads",
-      "name": "Skip Chinese App Ads",
-      "localizedNames": {
-        "ar": "تخطي إعلانات التطبيقات الصينية",
-        "bg": "Пропускане на реклами в китайски приложения",
-        "bn": "চীনা অ্যাপের বিজ্ঞাপন স্কিপ করুন",
-        "ca": "Omet els anuncis d’apps xineses",
-        "cs": "Přeskakování reklam v čínských aplikacích",
-        "da": "Spring kinesiske appreklamer over",
-        "de": "Chinesische App-Werbung überspringen",
-        "el": "Παράλειψη διαφημίσεων κινεζικών εφαρμογών",
-        "es": "Saltar anuncios de apps chinas",
-        "es-419": "Omitir anuncios de apps chinas",
-        "fi": "Ohita kiinalaisten appien mainokset",
-        "fr": "Ignorer les pubs des apps chinoises",
-        "fr-CA": "Ignorer les pubs des apps chinoises",
-        "gu": "ચાઇનીઝ ઍપની જાહેરાતો સ્કિપ કરો",
-        "he": "דילוג על פרסומות ביישומים סיניים",
-        "hi": "चीनी ऐप्स के विज्ञापन स्किप करें",
-        "hr": "Preskoči oglase u kineskim aplikacijama",
-        "hu": "Kínai appreklámok átugrása",
-        "id": "Lewati Iklan App Tiongkok",
-        "it": "Salta gli annunci delle app cinesi",
-        "ja": "中国アプリの広告をスキップ",
-        "kk": "Қытай қолданбаларындағы жарнаманы өткізіп жіберу",
-        "kn": "ಚೈನೀಸ್ ಆ್ಯಪ್ ಜಾಹೀರಾತುಗಳನ್ನು ಸ್ಕಿಪ್ ಮಾಡಿ",
-        "ko": "중국 앱 광고 건너뛰기",
-        "lt": "Praleisti kiniškų programų reklamas",
-        "ml": "ചൈനീസ് ആപ്പ് പരസ്യങ്ങൾ സ്കിപ്പ് ചെയ്യൂ",
-        "mr": "चिनी ॲप्सच्या जाहिराती वगळा",
-        "ms": "Langkau Iklan App China",
-        "nb": "Hopp over reklame i kinesiske apper",
-        "nl": "Advertenties in Chinese apps overslaan",
-        "or": "ଚାଇନିଜ୍ ଆପ୍ ବିଜ୍ଞାପନ ସ୍କିପ୍ କରନ୍ତୁ",
-        "pa": "ਚੀਨੀ ਐਪਾਂ ਦੇ ਇਸ਼ਤਿਹਾਰ ਛੱਡੋ",
-        "pl": "Pomijanie reklam w chińskich aplikacjach",
-        "pt-BR": "Pular Anúncios de Apps Chineses",
-        "pt-PT": "Saltar anúncios de aplicações chinesas",
-        "ro": "Omite reclamele aplicațiilor chinezești",
-        "ru": "Пропуск рекламы в китайских приложениях",
-        "sk": "Preskočiť reklamy v čínskych apkách",
-        "sl": "Preskoči oglase v kitajskih aplikacijah",
-        "sv": "Hoppa över reklam i kinesiska appar",
-        "ta": "சீன ஆப் விளம்பரங்களைத் தவிர்",
-        "te": "చైనీస్ యాప్ యాడ్‌లను స్కిప్ చేయండి",
-        "th": "ข้ามโฆษณาแอปจีน",
-        "tr": "Çin Uygulamalarında Reklamları Atla",
-        "uk": "Пропуск реклами в китайських програмах",
-        "ur": "چینی ایپس کے اشتہارات اسکپ کریں",
-        "vi": "Bỏ qua quảng cáo ứng dụng Trung Quốc",
-        "zh-Hans": "跳过广告",
-        "zh-Hant": "跳過廣告",
-        "zh-Hant-HK": "跳過廣告"
-      },
-      "version": "0.2.0-nightly",
-      "versionCode": 1,
-      "icon": {
-        "color": "red",
-        "symbol": "forward.end.fill"
-      },
-      "minimumAPILevel": 2,
-      "minimumIOSVersion": 17.4,
-      "service": true,
-      "actions": [
-        {
-          "name": "supportedApps",
-          "title": "List Supported Apps"
-        },
-        {
-          "name": "recordedApps",
-          "title": "List Recorded Apps"
-        }
-      ],
-      "url": "skip-chinese-ads.swiplet",
-      "size": 160644,
-      "sha256": "32282fe4a54d91df4e1c058ffdf03d8d7592c2b88ac3460e64dfb149fde0af71"
-    },
-    {
-      "id": "switch-app-store-account",
-      "name": "Switch App Store Account",
-      "localizedNames": {
-        "ar": "تبديل حساب App Store",
-        "bg": "Смяна на акаунт в App Store",
-        "bn": "App Store অ্যাকাউন্ট পরিবর্তন করুন",
-        "ca": "Canvia el compte de l’App Store",
-        "cs": "Přepínání účtu App Store",
-        "da": "Skift App Store-konto",
-        "de": "App Store-Account wechseln",
-        "el": "Αλλαγή λογαριασμού App Store",
-        "es": "Cambiar de cuenta de App Store",
-        "es-419": "Cambiar de cuenta de App Store",
-        "fi": "Vaihda App Store -tili",
-        "fr": "Changer de compte App Store",
-        "fr-CA": "Changer de compte App Store",
-        "gu": "App Store એકાઉન્ટ સ્વિચ કરો",
-        "he": "החלפת חשבון App Store",
-        "hi": "App Store खाता स्विच करें",
-        "hr": "Promijeni račun za App Store",
-        "hu": "App Store-fiók váltása",
-        "id": "Ganti Akun App Store",
-        "it": "Cambia account App Store",
-        "ja": "App Storeアカウントを切り替える",
-        "kk": "App Store аккаунтын ауыстыру",
-        "kn": "App Store ಖಾತೆಯನ್ನು ಬದಲಾಯಿಸಿ",
-        "ko": "App Store 계정 전환",
-        "lt": "Perjungti „App Store” paskyrą",
-        "ml": "App Store അക്കൗണ്ട് മാറ്റൂ",
-        "mr": "App Store खाते बदला",
-        "ms": "Tukar Akaun App Store",
-        "nb": "Bytt App Store-konto",
-        "nl": "App Store-account wisselen",
-        "or": "App Store ଆକାଉଣ୍ଟ୍ ବଦଳାନ୍ତୁ",
-        "pa": "App Store ਖਾਤਾ ਬਦਲੋ",
-        "pl": "Przełączanie konta App Store",
-        "pt-BR": "Trocar de Conta da App Store",
-        "pt-PT": "Mudar de conta da App Store",
-        "ro": "Schimbă contul App Store",
-        "ru": "Смена учетной записи App Store",
-        "sk": "Prepnúť účet App Store",
-        "sl": "Zamenjaj račun App Store",
-        "sv": "Byt App Store-konto",
-        "ta": "App Store கணக்கை மாற்று",
-        "te": "App Store అకౌంట్‌ను మార్చండి",
-        "th": "สลับบัญชี App Store",
-        "tr": "App Store Hesabını Değiştir",
-        "uk": "Зміна облікового запису App Store",
-        "ur": "‏App Store اکاؤنٹ تبدیل کریں",
-        "vi": "Chuyển tài khoản App Store",
-        "zh-Hans": "切换 App Store 账号",
-        "zh-Hant": "切換 App Store 帳號",
-        "zh-Hant-HK": "切換 App Store 帳户"
-      },
-      "version": "0.2.0-nightly",
-      "versionCode": 1,
-      "icon": {
-        "color": "blue",
-        "symbol": "person.2.circle.fill"
-      },
-      "minimumAPILevel": 2,
-      "minimumIOSVersion": 17.4,
-      "actions": [
-        {
-          "name": "switchAccount",
-          "title": "Switch App Store Account",
-          "description": "Signs Media & Purchases out and back in, with the iCloud account when the input has no email, or with the email and its given or saved password.",
-          "expose": [
-            "shortcuts"
-          ],
-          "input": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "email": {
-                "type": "string",
-                "description": "The Apple Account to sign in with; the iCloud account when it is missing."
-              },
-              "password": {
-                "type": "string",
-                "description": "The password; the saved one when it is missing."
-              }
-            },
-            "additionalProperties": false
-          },
-          "output": {
-            "type": "string",
-            "enum": [
-              "signedIn",
-              "needsAttention"
-            ]
-          }
-        }
-      ],
-      "url": "switch-app-store-account.swiplet",
-      "size": 19073,
-      "sha256": "6c306b3b05175c8d1c54a49bf81d42687842ddf6b97747e56a1522c7d3dca347"
-    },
-    {
-      "id": "simulate-location",
-      "name": "Simulate Location",
-      "localizedNames": {
-        "ar": "محاكاة الموقع",
-        "bg": "Симулиране на местоположение",
-        "bn": "লোকেশন সিমুলেট করুন",
-        "ca": "Simula la ubicació",
-        "cs": "Simulace polohy",
-        "da": "Simuler lokalitet",
-        "de": "Standort simulieren",
-        "el": "Προσομοίωση τοποθεσίας",
-        "es": "Simular ubicación",
-        "es-419": "Simular ubicación",
-        "fi": "Simuloi sijainti",
-        "fr": "Simuler la position",
-        "fr-CA": "Simuler la position",
-        "gu": "લોકેશન સિમ્યુલેટ કરો",
-        "he": "הדמיית מיקום",
-        "hi": "लोकेशन सिम्युलेट करें",
-        "hr": "Simuliraj lokaciju",
-        "hu": "Helyzet szimulálása",
-        "id": "Simulasikan Lokasi",
-        "it": "Simula posizione",
-        "ja": "位置情報をシミュレート",
-        "kk": "Орынды симуляциялау",
-        "kn": "ಲೊಕೇಶನ್ ಸಿಮ್ಯುಲೇಟ್ ಮಾಡಿ",
-        "ko": "위치 시뮬레이션",
-        "lt": "Simuliuoti vietą",
-        "ml": "ലൊക്കേഷൻ സിമുലേറ്റ് ചെയ്യൂ",
-        "mr": "लोकेशन सिम्युलेट करा",
-        "ms": "Simulasikan Lokasi",
-        "nb": "Simuler sted",
-        "nl": "Locatie simuleren",
-        "or": "ଲୋକେସନ୍ ସିମୁଲେଟ୍ କରନ୍ତୁ",
-        "pa": "ਟਿਕਾਣਾ ਸਿਮੂਲੇਟ ਕਰੋ",
-        "pl": "Symulowanie położenia",
-        "pt-BR": "Simular Localização",
-        "pt-PT": "Simular localização",
-        "ro": "Simularea localizării",
-        "ru": "Симуляция геопозиции",
-        "sk": "Simulovať polohu",
-        "sl": "Simuliraj lokacijo",
-        "sv": "Simulera plats",
-        "ta": "இருப்பிடத்தை உருவகப்படுத்து",
-        "te": "లొకేషన్‌ను సిమ్యులేట్ చేయండి",
-        "th": "จำลองตำแหน่ง",
-        "tr": "Konumu Simüle Et",
-        "uk": "Симуляція місцезнаходження",
-        "ur": "لوکیشن سیمولیٹ کریں",
-        "vi": "Mô phỏng vị trí",
-        "zh-Hans": "模拟位置",
-        "zh-Hant": "模擬位置",
-        "zh-Hant-HK": "模擬位置"
-      },
-      "version": "0.2.0-nightly",
-      "versionCode": 1,
-      "icon": {
-        "color": "blue",
-        "symbol": "location.fill"
-      },
-      "minimumAPILevel": 2,
-      "minimumIOSVersion": 17.4,
-      "actions": [
-        {
-          "name": "get",
-          "title": "Get the Simulated Location"
-        },
-        {
-          "name": "set",
-          "title": "Set the Simulated Location",
-          "input": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "latitude": {
-                "type": "number"
-              },
-              "longitude": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "latitude",
-              "longitude"
-            ],
-            "additionalProperties": false
-          }
-        }
-      ],
-      "url": "simulate-location.swiplet",
-      "size": 14919,
-      "sha256": "3996f7c4fb7eb5a187dea9b02bffd8ecae8276ae4237a5868af532901cbc07d7"
-    },
-    {
       "id": "roco-auto-tap",
       "name": "洛克王国 · 自动投掷",
       "version": "0.1.0-nightly",
-      "versionCode": 5,
+      "versionCode": 6,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -295,15 +20,20 @@
         {
           "name": "start",
           "title": "开始自动投掷",
-          "description": "跳转到洛克王国并开始每秒点击一次投掷按钮；切换应用或拉下控制中心自动停止",
+          "description": "跳转到洛克王国并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止",
           "expose": [
             "shortcuts"
           ]
+        },
+        {
+          "name": "record",
+          "title": "坐标记录",
+          "description": "跳转到洛克王国并抓取当前画面，返回设置页后点图记录坐标"
         }
       ],
       "url": "roco-auto-tap.swiplet",
-      "size": 9280,
-      "sha256": "c41c63e458406a83ec727fbf7fc93616390eb747fa8ce64fa8a078883ea45dd8"
+      "size": 14511,
+      "sha256": "8c8303b154e7b5c3b80bceee65fdab9893635732e53626b2d0f80b819363b8b6"
     }
   ]
 }
