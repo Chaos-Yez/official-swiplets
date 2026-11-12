@@ -90,7 +90,7 @@ const appIcon = [
   clipShape("roundedRectangle", 9),
 ];
 
-/** 设置行内的小应用图标 */
+/** 行内 / 「开始连点」按钮里的小应用图标 */
 const rowIcon = [
   resizable(),
   frame({ width: 24, height: 24 }),
@@ -457,19 +457,7 @@ export default function App() {
         {/* ============ 主页面 ============ */}
         <Toolbar modifiers={[navigationTitle("连点器"), onAppear(loadApps)]}>
           <List>
-            {/* 页面最上方：当前目标的应用图标与名称，仅展示、不可点击，独立于下方按钮卡片 */}
-            <Section>
-              <HStack spacing={10} modifiers={[frame({ maxWidth: Infinity })]}>
-                <Spacer />
-                {targetIcon !== "" && (
-                  <Image uiImage={targetIcon} modifiers={appIcon} />
-                )}
-                <Text>{targetDisplayName}</Text>
-                <Spacer />
-              </HStack>
-            </Section>
-
-            {/* 开始连点：居中、放大的主按钮 */}
+            {/* 开始连点：居中、放大的主按钮，图标直接用当前目标的应用图标 */}
             <Section
               footer={
                 <Text modifiers={caption}>
@@ -481,8 +469,6 @@ export default function App() {
               <HStack modifiers={[frame({ maxWidth: Infinity })]}>
                 <Spacer />
                 <Button
-                  label="开始连点"
-                  systemImage="play.fill"
                   onPress={begin}
                   modifiers={[
                     buttonStyle("borderedProminent"),
@@ -490,7 +476,14 @@ export default function App() {
                     controlSize("extraLarge"),
                     font({ size: 20, weight: "semibold" }),
                   ]}
-                />
+                >
+                  <HStack spacing={8}>
+                    {targetIcon !== "" && (
+                      <Image uiImage={targetIcon} modifiers={rowIcon} />
+                    )}
+                    <Text>开始连点</Text>
+                  </HStack>
+                </Button>
                 <Spacer />
               </HStack>
             </Section>
