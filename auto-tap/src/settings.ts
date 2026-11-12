@@ -145,13 +145,13 @@ function sanitizeGames(value: unknown): Game[] {
     if (!validBundleId(bundleId) || games.some((g) => g.bundleId === bundleId)) {
       continue;
     }
+    const rawName = typeof item.name === "string" ? item.name.trim() : "";
     games.push({
       id: typeof item.id === "string" && item.id !== ""
         ? item.id
         : makeGameId(),
-      name: typeof item.name === "string" && item.name !== ""
-        ? item.name
-        : bundleId,
+      // 旧版本默认项的名字写死为「示例目标」；升级后统一改为按包名显示，清掉残留占位名
+      name: rawName === "" || rawName === "示例目标" ? bundleId : rawName,
       bundleId,
     });
   }
