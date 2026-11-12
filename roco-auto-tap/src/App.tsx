@@ -1,14 +1,19 @@
-// 连点器设置页：居中的大号「开始连点」→ 坐标记录 → 跳转游戏白名单 → 点击间隔 → 点击点。
+// 连点器设置页。主页面只留主按钮和几个入口，
+// 「坐标记录」与「目标对象」各自再进一层子页面（参照官方「跳过广告」插件）。
 // 配置直接读写 dataDirectory，与 Action 引擎共享。
 import {
   Button,
-  DisclosureGroup,
+  Form,
   HStack,
   Host,
+  Image,
   LabeledContent,
   List,
+  NavigationDestination,
+  NavigationLink,
   NavigationStack,
   Picker,
+  ProgressView,
   RNHostView,
   Section,
   Spacer,
@@ -17,19 +22,24 @@ import {
   Toggle,
   Toolbar,
   ToolbarItem,
+  VStack,
 } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
+  clipShape,
   controlSize,
   font,
   foregroundStyle,
   frame,
   navigationTitle,
+  onAppear,
+  resizable,
   tag,
   textSelection,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { useEffect, useState } from "react";
+import { Image as RNImage } from "react-native";
 import { actions, exit } from "@swipt/api/swiplet";
 import { PointPicker } from "./PointPicker";
 import {
@@ -68,6 +78,13 @@ const dragHint = [
   foregroundStyle({ type: "hierarchical", style: "secondary" }),
 ];
 
+/** 官方「跳过广告」插件的应用行：圆角图标 + 名称 + 副标题 */
+const appIcon = [
+  resizable(),
+  frame({ width: 40, height: 40 }),
+  clipShape("roundedRectangle", 9),
+];
+
 const INTERVAL_OPTIONS: [number, string][] = [
   [300, "0.3 秒"],
   [500, "0.5 秒"],
@@ -90,11 +107,19 @@ const phaseText: Record<Phase, string> = {
 interface InstalledApp {
   bundleId: string;
   name: string;
+  /** cacheDirectory 里 PNG 的 file:// uri，取不到则为空串 */
+  icon: string;
+}
+
+interface ImageSize {
+  width: number;
+  height: number;
 }
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [recording, setRecording] = useState<Recording | null>(null);
+  const [shotSize, setShotSize] = useState<ImageSize | null>(null);
   const [coordX, setCoordX] = useState("");
   const [coordY, setCoordY] = useState("");
   const [targetIndex, setTargetIndex] = useState(0);
@@ -106,8 +131,6 @@ export default function App() {
   const [installed, setInstalled] = useState<InstalledApp[]>([]);
   const [appsBusy, setAppsBusy] = useState(false);
   const [appFilter, setAppFilter] = useState("");
-  const [newGameName, setNewGameName] = useState("");
-  const [newGameBundle, setNewGameBundle] = useState("");
 
   useEffect(() => {
     readSettings().then(setSettings, () => setSettings(null));
@@ -141,6 +164,37 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [recording?.time]);
 
+  // 读图片的真实像素尺寸，按真实比例显示：竖屏截图不再被拉伸。
+  // 测量完成后才挂载 RNHostView，避免宿主视图先按旧尺寸布局再改动。
+  useEffect(() => {
+    if (recording === null) {
+      setShotSize(null);
+      return;
+    }
+    let alive = true;
+    setShotSize(null);
+    const fallback = () => {
+      // 读不到就用记录里的尺寸兜底，PointPicker 内部仍用 contain 防变形
+      if (alive) {
+        setShotSize({ width: recording.width, height: recording.height });
+      }
+    };
+    try {
+      RNImage.getSize(
+        recordImageFile(recording.image).uri,
+        (width, height) => {
+          if (alive) setShotSize({ width, height });
+        },
+        fallback,
+      );
+    } catch {
+      fallback();
+    }
+    return () => {
+      alive = false;
+    };
+  }, [recording?.image, recording?.time, recording?.width, recording?.height]);
+
   const update = (next: Settings) => {
     setSettings(next);
     writeSettings(next).catch((error: Error) => setDetail(error.message));
@@ -150,7 +204,7 @@ export default function App() {
     if (busy || settings === null) return;
     setBusy(true);
     setPhase("running");
-    setDetail("正在跳转勾选的目标游戏并按已启用点位连点…");
+    setDetail("正在跳转勾选的目标对象并按已启用点位连点…");
     start().then(
       (report) => {
         setBusy(false);
@@ -171,11 +225,11 @@ export default function App() {
     );
   };
 
-  /** 坐标记录：跳勾选的游戏 → 抓当前画面 → 自动回到设置页 */
+  /** 坐标记录：跳勾选的目标对象 → 抓当前画面 → 自动回到设置页 */
   const capture = () => {
     if (recordingBusy) return;
     setRecordingBusy(true);
-    setDetail("正在跳转勾选的目标游戏，3 秒后抓取当前画面并回到本页…");
+    setDetail("正在跳转勾选的目标对象，3 秒后抓取当前画面并回到本页…");
     record().then(
       async (shot) => {
         setRecordingBusy(false);
@@ -283,31 +337,18 @@ export default function App() {
     });
   };
 
-  /** 勾选某个游戏作为跳转目标 */
-  const selectGame = (id: string) => {
-    if (settings === null) return;
-    update({ ...settings, targetGameId: id });
-    const g = settings.games.find((x) => x.id === id);
-    setDetail(`跳转目标已设为 ${g?.name ?? ""} (${g?.bundleId ?? ""})。`);
-  };
-
-  /** 加入白名单并自动勾选；已存在则直接选中 */
+  /** 选中某个已安装应用作为目标对象；不存在则加入，超过上限自动淘汰最旧的 */
   const addGame = (name: string, bundleId: string) => {
     if (settings === null) return;
     const id = bundleId.trim();
     if (!validBundleId(id)) {
-      setDetail(
-        "Bundle ID 不合法：只能用字母、数字、点、下划线、连字符，且以字母或数字开头。",
-      );
+      setDetail(`「${id}」不是有效的 Bundle ID`);
       return;
     }
     const existing = settings.games.find((g) => g.bundleId === id);
     if (existing !== undefined) {
-      selectGame(existing.id);
-      return;
-    }
-    if (settings.games.length >= MAX_GAMES) {
-      setDetail(`最多 ${MAX_GAMES} 个游戏，请先左滑删除一个。`);
+      update({ ...settings, targetGameId: existing.id });
+      setDetail(`目标对象已设为 ${existing.name} (${id})。`);
       return;
     }
     const game: Game = {
@@ -315,12 +356,9 @@ export default function App() {
       name: name.trim() === "" ? id : name.trim(),
       bundleId: id,
     };
-    update({
-      ...settings,
-      games: [...settings.games, game],
-      targetGameId: game.id,
-    });
-    setDetail(`已添加并勾选「${game.name}」(${id})。`);
+    const games = [...settings.games.slice(-(MAX_GAMES - 1)), game];
+    update({ ...settings, games, targetGameId: game.id });
+    setDetail(`目标对象已设为「${game.name}」(${id})。`);
   };
 
   const loadApps = () => {
@@ -330,9 +368,7 @@ export default function App() {
       (apps) => {
         setInstalled(apps);
         setAppsBusy(false);
-        setDetail(
-          `读取到 ${apps.length} 个已安装应用；点名称即可加入白名单并自动勾选。`,
-        );
+        setDetail(`读取到 ${apps.length} 个已安装应用；勾选一个即设为目标对象。`);
       },
       (error: Error) => {
         setAppsBusy(false);
@@ -368,10 +404,13 @@ export default function App() {
     ? { x: parsedX / REF_W, y: parsedY / REF_H }
     : null;
 
+  const currentBundle = settings === null ? "" : targetBundle(settings);
   const targetGame =
     settings === null
       ? undefined
       : settings.games.find((g) => g.id === settings.targetGameId);
+  const targetIcon =
+    installed.find((app) => app.bundleId === currentBundle)?.icon ?? "";
   const filter = appFilter.trim().toLowerCase();
   const filteredApps = installed
     .filter(
@@ -380,11 +419,12 @@ export default function App() {
         app.name.toLowerCase().includes(filter) ||
         app.bundleId.toLowerCase().includes(filter),
     )
-    .slice(0, 40);
+    .slice(0, 60);
 
   return (
     <Host style={{ flex: 1 }}>
       <NavigationStack>
+        {/* ============ 主页面 ============ */}
         <Toolbar modifiers={[navigationTitle("连点器")]}>
           <List>
             {/* 最上方：居中、放大的主按钮 */}
@@ -392,7 +432,7 @@ export default function App() {
               footer={
                 <Text modifiers={caption}>
                   {detail === ""
-                    ? "点「开始连点」会跳转勾选的目标游戏，按下方已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止。"
+                    ? "点「开始连点」会跳转勾选的目标对象，按下方已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止。"
                     : detail}
                 </Text>
               }
@@ -417,188 +457,31 @@ export default function App() {
               </LabeledContent>
             </Section>
 
-            {/* 坐标记录 */}
+            {/* 两个入口：点进去才展开各自的设置项 */}
             <Section
-              title="坐标记录"
+              title="设置"
               footer={
                 <Text modifiers={caption}>
-                  跳转勾选的目标游戏后 3 秒抓取当前画面并自动返回本页；在画面上点一下会出现红色标记与坐标。
-                  截图只保留 10 分钟，到点自动销毁；再次抓取会覆盖前一张，不会越用越占空间。
+                  两项设置各自单独一页，主页面保持简洁。坐标记录的截图只在那一页显示，10 分钟后自动销毁。
                 </Text>
               }
             >
-              <Button
-                label={recordingBusy ? "正在记录…" : "坐标记录（跳转游戏）"}
-                systemImage="mappin.and.ellipse"
-                onPress={capture}
-                modifiers={[buttonStyle("bordered"), tint("orange")]}
-              />
-              {recording !== null && (
-                <RNHostView matchContents>
-                  <PointPicker
-                    key={recording.time}
-                    uri={recordImageFile(recording.image).uri}
-                    width={recording.width}
-                    height={recording.height}
-                    marker={marker}
-                    label={
-                      coordX === "" || coordY === ""
-                        ? ""
-                        : `${coordX}, ${coordY}`
-                    }
-                    onPick={pick}
-                  />
-                </RNHostView>
-              )}
-              <LabeledContent label="记录的坐标">
-                <Text
-                  modifiers={[
-                    textSelection(true),
-                    font({ design: "monospaced" }),
-                  ]}
-                >
-                  {coordX === "" || coordY === ""
-                    ? "尚未记录"
-                    : `${coordX}, ${coordY}`}
-                </Text>
-              </LabeledContent>
-              <TextField
-                placeholder={
-                  coordX === "" ? "X 坐标" : `X 坐标（当前 ${coordX}）`
-                }
-                onTextChange={setCoordX}
-                modifiers={[]}
-              />
-              <TextField
-                placeholder={
-                  coordY === "" ? "Y 坐标" : `Y 坐标（当前 ${coordY}）`
-                }
-                onTextChange={setCoordY}
-                modifiers={[]}
-              />
-              {settings !== null && (
-                <Picker<number>
-                  label="保存到"
-                  selection={targetIndex}
-                  onSelectionChange={(value) => setTargetIndex(Number(value))}
-                >
-                  {settings.points.map((p, index) => (
-                    <Text key={p.id} modifiers={[tag(index)]}>
-                      {p.name}
-                    </Text>
-                  ))}
-                  {settings.points.length < MAX_POINTS && (
-                    <Text modifiers={[tag(-1)]}>新增点位</Text>
-                  )}
-                </Picker>
-              )}
-              <Button
-                label="保存为点位"
-                systemImage="square.and.arrow.down"
-                onPress={applyCoordinate}
-              />
-            </Section>
-
-            {/* 跳转游戏白名单 */}
-            <Section
-              title="跳转游戏"
-              footer={
-                <Text modifiers={caption}>
-                  勾选一个游戏后，「开始连点」和「坐标记录」都会跳转到它，自动停止的判断也以它为准。
-                  默认洛克王国；可从已安装应用点选添加，也可手动填 Bundle ID，最多 {MAX_GAMES} 个，左滑可删除（至少保留一个）。
-                </Text>
-              }
-            >
-              {settings !== null && (
-                <LabeledContent label="当前目标">
-                  <Text
-                    modifiers={[
-                      font({ design: "monospaced" }),
-                      textSelection(true),
-                    ]}
-                  >
-                    {targetGame?.name ?? "洛克王国"} · {targetBundle(settings)}
+              <NavigationLink value="record">
+                <LabeledContent label="坐标记录">
+                  <Text modifiers={caption}>
+                    {recording === null
+                      ? "尚未记录画面"
+                      : `已有画面 · ${recording.width}×${recording.height}`}
                   </Text>
                 </LabeledContent>
-              )}
-              {settings !== null && (
-                <List.ForEach
-                  data={settings.games}
-                  keyExtractor={(item) => item.id}
-                  onDelete={(indices) => {
-                    const games = [...settings.games];
-                    for (const index of [...indices].sort((a, b) => b - a)) {
-                      if (games.length > 1) games.splice(index, 1);
-                    }
-                    const targetGameId = games.some(
-                      (g) => g.id === settings.targetGameId,
-                    )
-                      ? settings.targetGameId
-                      : games[0]!.id;
-                    update({ ...settings, games, targetGameId });
-                  }}
-                >
-                  {({ item }) => (
-                    <HStack>
-                      <Text modifiers={caption}>{item.bundleId}</Text>
-                      <Toggle
-                        label={item.name}
-                        isOn={item.id === settings.targetGameId}
-                        onIsOnChange={(on) => {
-                          if (on) selectGame(item.id);
-                        }}
-                      />
-                    </HStack>
-                  )}
-                </List.ForEach>
-              )}
-              <DisclosureGroup label="从已安装应用添加（点名称即加入并勾选）">
-                <Button
-                  label={appsBusy ? "读取中…" : "读取已安装应用"}
-                  systemImage="arrow.triangle.2.circlepath"
-                  onPress={loadApps}
-                  modifiers={[buttonStyle("bordered")]}
-                />
-                <TextField
-                  placeholder="按名称或 Bundle ID 筛选"
-                  onTextChange={setAppFilter}
-                  modifiers={[]}
-                />
-                {installed.length > 0 && filteredApps.length === 0 && (
-                  <Text modifiers={caption}>没有匹配的应用</Text>
-                )}
-                {filteredApps.map((app) => (
-                  <Button
-                    key={app.bundleId}
-                    label={`${app.name} · ${app.bundleId}`}
-                    onPress={() => addGame(app.name, app.bundleId)}
-                  />
-                ))}
-                {installed.length > 40 && (
+              </NavigationLink>
+              <NavigationLink value="targets">
+                <LabeledContent label="目标对象">
                   <Text modifiers={caption}>
-                    只显示前 40 个，可用上方输入框筛选。
+                    {targetGame?.name ?? "洛克王国"} · {currentBundle}
                   </Text>
-                )}
-              </DisclosureGroup>
-              <TextField
-                placeholder="游戏名称（可选）"
-                onTextChange={setNewGameName}
-                modifiers={[]}
-              />
-              <TextField
-                placeholder="Bundle ID，例如 com.tencent.nrc"
-                onTextChange={setNewGameBundle}
-                modifiers={[]}
-              />
-              <Button
-                label="添加并勾选"
-                systemImage="plus"
-                onPress={() => {
-                  addGame(newGameName, newGameBundle);
-                  setNewGameName("");
-                  setNewGameBundle("");
-                }}
-              />
+                </LabeledContent>
+              </NavigationLink>
             </Section>
 
             {/* 点击间隔 */}
@@ -651,9 +534,9 @@ export default function App() {
               />
             </Section>
 
-            {/* 点击点：勾选启用 + 拖拽排序 */}
+            {/* 点击位置：勾选启用 + 拖拽排序 */}
             <Section
-              title="点击点"
+              title="点击位置"
               footer={
                 <Text modifiers={caption}>
                   默认只有点位一启用。勾选其它点位即参与点击，按这里的顺序依次执行；
@@ -681,18 +564,22 @@ export default function App() {
                   {({ item, index }) => (
                     <HStack>
                       <Text modifiers={dragHint}>≡</Text>
-                      <Text modifiers={caption}>
-                        {item.x >= 0 ? `(${item.x}, ${item.y})` : "未设置"}
-                      </Text>
+                      {/* 名称在前、坐标作为副标题在后，绿色开关仍在最右 */}
                       <Toggle
-                        label={item.name}
                         isOn={item.enabled}
                         onIsOnChange={(enabled) => {
                           const points = [...settings.points];
                           points[index] = { ...points[index]!, enabled };
                           update({ ...settings, points });
                         }}
-                      />
+                      >
+                        <Text>{item.name}</Text>
+                        <Text modifiers={caption}>
+                          {item.x >= 0
+                            ? `(${item.x}, ${item.y})`
+                            : "未设置坐标"}
+                        </Text>
+                      </Toggle>
                     </HStack>
                   )}
                 </List.ForEach>
@@ -722,6 +609,167 @@ export default function App() {
             </ToolbarItem>
           </Toolbar.Content>
         </Toolbar>
+
+        {/* ============ 坐标记录子页面 ============ */}
+        <NavigationDestination value="record">
+          <Toolbar modifiers={[navigationTitle("坐标记录")]}>
+            <List>
+              <Section
+                footer={
+                  <Text modifiers={caption}>
+                    {detail === ""
+                      ? "跳转勾选的目标对象后 3 秒抓取当前画面并自动返回；在画面上点一下会出现红色标记与坐标。截图只保留 10 分钟，到点自动销毁；再次抓取会覆盖前一张。"
+                      : detail}
+                  </Text>
+                }
+              >
+                <Button
+                  label={recordingBusy ? "正在记录…" : "坐标记录（跳转对象）"}
+                  systemImage="mappin.and.ellipse"
+                  onPress={capture}
+                  modifiers={[buttonStyle("bordered"), tint("orange")]}
+                />
+                {recording !== null && shotSize !== null && (
+                  <RNHostView matchContents>
+                    <PointPicker
+                      key={recording.time}
+                      uri={recordImageFile(recording.image).uri}
+                      width={shotSize.width}
+                      height={shotSize.height}
+                      marker={marker}
+                      label={
+                        coordX === "" || coordY === ""
+                          ? ""
+                          : `${coordX}, ${coordY}`
+                      }
+                      onPick={pick}
+                    />
+                  </RNHostView>
+                )}
+                <LabeledContent label="记录的坐标">
+                  <Text
+                    modifiers={[
+                      textSelection(true),
+                      font({ design: "monospaced" }),
+                    ]}
+                  >
+                    {coordX === "" || coordY === ""
+                      ? "尚未记录"
+                      : `${coordX}, ${coordY}`}
+                  </Text>
+                </LabeledContent>
+                <TextField
+                  placeholder={
+                    coordX === "" ? "X 坐标" : `X 坐标（当前 ${coordX}）`
+                  }
+                  onTextChange={setCoordX}
+                  modifiers={[]}
+                />
+                <TextField
+                  placeholder={
+                    coordY === "" ? "Y 坐标" : `Y 坐标（当前 ${coordY}）`
+                  }
+                  onTextChange={setCoordY}
+                  modifiers={[]}
+                />
+                {settings !== null && (
+                  <Picker<number>
+                    label="保存到"
+                    selection={targetIndex}
+                    onSelectionChange={(value) => setTargetIndex(Number(value))}
+                  >
+                    {settings.points.map((p, index) => (
+                      <Text key={p.id} modifiers={[tag(index)]}>
+                        {p.name}
+                      </Text>
+                    ))}
+                    {settings.points.length < MAX_POINTS && (
+                      <Text modifiers={[tag(-1)]}>新增点位</Text>
+                    )}
+                  </Picker>
+                )}
+                <Button
+                  label="保存为点位"
+                  systemImage="square.and.arrow.down"
+                  onPress={applyCoordinate}
+                />
+              </Section>
+            </List>
+          </Toolbar>
+        </NavigationDestination>
+
+        {/* ============ 目标对象子页面 ============ */}
+        <NavigationDestination value="targets">
+          <Toolbar modifiers={[navigationTitle("目标对象"), onAppear(loadApps)]}>
+            <Form>
+              <Section
+                title="当前目标对象"
+                footer={
+                  <Text modifiers={caption}>
+                    勾选后，「开始连点」和「坐标记录」都会跳转到它，自动停止的判断也以它为准。
+                  </Text>
+                }
+              >
+                <HStack spacing={12}>
+                  {targetIcon !== "" && (
+                    <Image uiImage={targetIcon} modifiers={appIcon} />
+                  )}
+                  <VStack alignment="leading" spacing={2}>
+                    <Text>{targetGame?.name ?? "洛克王国"}</Text>
+                    <Text modifiers={caption}>{currentBundle}</Text>
+                  </VStack>
+                  <Spacer />
+                </HStack>
+              </Section>
+
+              <Section
+                title="从已安装应用选择"
+                footer={
+                  <Text modifiers={caption}>
+                    {detail === ""
+                      ? "勾选一个应用即设为目标对象；只显示前 60 个，可按名称或 Bundle ID 搜索。"
+                      : detail}
+                  </Text>
+                }
+              >
+                <TextField
+                  placeholder="搜索应用名称或 Bundle ID"
+                  onTextChange={setAppFilter}
+                  modifiers={[]}
+                />
+                {appsBusy && <ProgressView />}
+                {installed.length > 0 && filteredApps.length === 0 && (
+                  <Text modifiers={caption}>没有匹配的应用</Text>
+                )}
+                {filteredApps.map((app) => (
+                  <Toggle
+                    key={app.bundleId}
+                    isOn={app.bundleId === currentBundle}
+                    onIsOnChange={(on) => {
+                      if (on) addGame(app.name, app.bundleId);
+                    }}
+                  >
+                    <HStack spacing={12}>
+                      {app.icon !== "" && (
+                        <Image uiImage={app.icon} modifiers={appIcon} />
+                      )}
+                      <VStack alignment="leading" spacing={2}>
+                        <Text>{app.name}</Text>
+                        <Text modifiers={caption}>{app.bundleId}</Text>
+                      </VStack>
+                    </HStack>
+                  </Toggle>
+                ))}
+                <Button
+                  label={appsBusy ? "读取中…" : "刷新应用列表"}
+                  systemImage="arrow.triangle.2.circlepath"
+                  onPress={loadApps}
+                  modifiers={[buttonStyle("bordered")]}
+                />
+              </Section>
+            </Form>
+          </Toolbar>
+        </NavigationDestination>
       </NavigationStack>
     </Host>
   );

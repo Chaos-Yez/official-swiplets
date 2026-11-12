@@ -206,7 +206,7 @@ export default defineExtension({
     start: defineAction({
       title: "开始自动投掷",
       description:
-        "跳转到洛克王国并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止",
+        "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止",
       // 不写 expose：不再注册到 iOS 快捷指令 / 轻点背面，只从插件设置页触发
       async run(_, { signal }) {
         const target = targetBundle(await readSettings());
@@ -258,7 +258,12 @@ export default defineExtension({
         await device.launchApplication(target, { signal });
         await sleep(RECORD_DELAY_MS, signal);
         const shot = await device.screenshot({ signal });
-        const image = shot.width < shot.height ? shot.rotate(90) : shot;
+        // 竖屏画面转 90° 统一成横屏，方便与横屏参考坐标对齐。
+        // 旋转后宽高必须对调写进记录，否则设置页会按旧比例把图片拉伸。
+        const rotated = shot.width < shot.height;
+        const image = rotated ? shot.rotate(90) : shot;
+        const width = rotated ? shot.height : image.width;
+        const height = rotated ? shot.width : image.height;
         try {
           if (!(await dataDirectory.exists())) await dataDirectory.create();
         } catch {
@@ -273,8 +278,8 @@ export default defineExtension({
           format: "png",
         });
         await writeRecording({
-          width: image.width,
-          height: image.height,
+          width,
+          height,
           time,
           image: imageName,
           x: -1,
@@ -284,20 +289,35 @@ export default defineExtension({
         await device
           .launchApplication(SWIPT_BUNDLE_ID, { signal })
           .catch(() => {});
-        return { width: image.width, height: image.height };
+        return { width, height };
       },
     }),
 
-    /** 读取设备已安装应用，供设置页维护跳转目标白名单 */
+    /** 读取设备已安装应用及其图标，供设置页选择目标对象 */
     listApps: defineAction({
       title: "读取已安装应用",
-      description: "列出设备上已安装的应用，供设置页选择要跳转的游戏",
+      description: "列出设备上已安装的应用与图标，供设置页选择目标对象",
       async run(_, { signal }) {
         const apps = await device.installedApplications({ signal });
-        return apps.map((app) => ({
-          bundleId: app.bundleId,
-          name: app.name || app.bundleId,
-        }));
+        // 与官方「跳过广告」插件一致：图标是 cacheDirectory 里的 PNG，
+        // 把 file:// uri 交给设置页的 SwiftUI Image 显示。
+        const list = await Promise.all(
+          apps.map(async (app) => {
+            let icon = "";
+            try {
+              icon = (await device.applicationIcon(app.bundleId, { signal })).uri;
+            } catch {
+              // 个别应用没有图标：留空，列表里只显示名称
+            }
+            return {
+              bundleId: app.bundleId,
+              name: app.name || app.bundleId,
+              icon,
+            };
+          }),
+        );
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        return list;
       },
     }),
   },
