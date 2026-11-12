@@ -412,7 +412,6 @@ export default function App() {
       (apps) => {
         setInstalled(apps);
         setAppsBusy(false);
-        setDetail(`读取到 ${apps.length} 个已安装应用；勾选一个即设为目标对象。`);
       },
       (error: Error) => {
         setAppsBusy(false);
@@ -495,9 +494,8 @@ export default function App() {
             <Section
               footer={
                 <Text modifiers={caption}>
-                  {detail === ""
-                    ? "点「开始连点」后约 3 秒开始自动连点。\n切回 Swipt、切到其他应用、锁屏或熄屏都会自动停止。"
-                    : detail}
+                  点「开始连点」后约 3 秒开始自动连点。{"\n"}
+                  切回 Swipt、切到其他应用、锁屏或熄屏都会自动停止。
                 </Text>
               }
             >
@@ -563,15 +561,11 @@ export default function App() {
               title="点击位置"
               footer={
                 <Text modifiers={caption}>
-                  默认只有点位一启用。勾选其它点位即参与点击，按这里的顺序依次执行；
-                  未设置坐标的点位会自动跳过。
+                  默认只有点位一启用。勾选其它点位即参与点击，按这里的顺序依次执行；未设置坐标的点位会自动跳过。{"\n"}
+                  按住行首把手可拖动调整点击顺序，左滑可删除。
                 </Text>
               }
             >
-              {/* 拖动提示放在最前头 */}
-              <Text modifiers={dragHint}>
-                ≡ 按住行首把手可拖动调整点击顺序，左滑可删除
-              </Text>
               {settings !== null && (
                 <List.ForEach
                   data={settings.points}
