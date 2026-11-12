@@ -747,6 +747,7 @@ export default function App() {
                   )}
                   <VStack alignment="leading" spacing={2}>
                     <Text>{targetDisplayName}</Text>
+                    <Text modifiers={caption}>{currentBundle}</Text>
                   </VStack>
                   <Spacer />
                 </HStack>
@@ -783,7 +784,10 @@ export default function App() {
                       {app.icon !== "" && (
                         <Image uiImage={app.icon} modifiers={appIcon} />
                       )}
-                      <Text>{app.name}</Text>
+                      <VStack alignment="leading" spacing={2}>
+                        <Text>{app.name}</Text>
+                        <Text modifiers={caption}>{app.bundleId}</Text>
+                      </VStack>
                     </HStack>
                   </Toggle>
                 ))}
