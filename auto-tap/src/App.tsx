@@ -494,11 +494,7 @@ export default function App() {
             {/* 最上方：居中、放大的主按钮 */}
             <Section
               footer={
-                <Text modifiers={caption}>
-                  {detail === ""
-                    ? "点「开始连点」会跳转勾选的目标对象，按下方已启用点位的顺序循环点击；切回 Swipt、切应用或锁屏自动停止。"
-                    : detail}
-                </Text>
+                <Text modifiers={caption}>{detail}</Text>
               }
             >
               <HStack modifiers={[frame({ maxWidth: Infinity })]}>
@@ -516,6 +512,25 @@ export default function App() {
                 />
                 <Spacer />
               </HStack>
+            </Section>
+
+            {/* 使用说明：整齐列在「开始连点」下方 */}
+            <Section title="使用说明">
+              <VStack alignment="leading" spacing={6}>
+                <Text modifiers={caption}>
+                  1. 使用前先在「设置 · 目标对象」里选择要连点的应用。
+                </Text>
+                <Text modifiers={caption}>
+                  2. 点「开始连点」后会先跳转到目标应用，约 3 秒后开始自动连点。
+                </Text>
+                <Text modifiers={caption}>
+                  3. 出现以下情况会自动停止（需重新点击开始）：
+                </Text>
+                <Text modifiers={caption}>　· 切回 Swipt 或切换到其他应用</Text>
+                <Text modifiers={caption}>　· 目标应用被切到后台</Text>
+                <Text modifiers={caption}>　· 设备锁屏或屏幕熄灭</Text>
+                <Text modifiers={caption}>　· 连续点击失败（如界面变化导致点不到）</Text>
+              </VStack>
             </Section>
 
             {/* 四个入口：点进去才展开各自的设置项 */}
@@ -646,7 +661,7 @@ export default function App() {
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
-                      ? "跳转勾选的目标对象后 3 秒抓取当前画面并自动返回；在画面上点一下会出现红色标记与坐标，再次抓取会覆盖前一张。"
+                      ? "1. 点「坐标记录」会跳转到目标对象，约 3 秒后自动抓取画面并返回。\n2. 在画面上点一下定位红色标记，按住标记可拖动精确定位。\n3. 选好要保存的点位后点「保存为点位」，最多 8 个。\n4. 再次抓取会覆盖上一张；截图 10 分钟后自动销毁。"
                       : detail}
                   </Text>
                 }
@@ -758,7 +773,7 @@ export default function App() {
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
-                      ? "勾选一个应用即设为目标对象；只显示前 60 个，可按名称或 Bundle ID 搜索。"
+                      ? "1. 使用前先在「当前目标对象」里选好要连点的应用。\n2. 点「开始连点」会先跳转过去，约 3 秒后开始自动连点。\n3. 切回 Swipt、切到其他应用、锁屏或屏幕熄灭都会自动停止。"
                       : detail}
                   </Text>
                 }
