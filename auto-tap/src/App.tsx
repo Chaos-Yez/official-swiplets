@@ -610,6 +610,7 @@ export default function App() {
                   systemImage="plus"
                   onPress={addPoint}
                 />
+                <Spacer />
               </HStack>
             </Section>
 
@@ -721,6 +722,7 @@ export default function App() {
                     systemImage="square.and.arrow.down"
                     onPress={applyCoordinate}
                   />
+                  <Spacer />
                 </HStack>
               </Section>
             </List>
@@ -860,6 +862,7 @@ export default function App() {
                     onPress={applyCustomInterval}
                     modifiers={[buttonStyle("bordered")]}
                   />
+                  <Spacer />
                 </HStack>
               </Section>
             </Form>
@@ -926,6 +929,7 @@ export default function App() {
                     onPress={applyCustomJitter}
                     modifiers={[buttonStyle("bordered")]}
                   />
+                  <Spacer />
                 </HStack>
               </Section>
             </Form>
