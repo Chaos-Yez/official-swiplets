@@ -90,11 +90,18 @@ const appIcon = [
   clipShape("roundedRectangle", 9),
 ];
 
-/** 行内 / 「开始连点」按钮里的小应用图标 */
+/** 行内小应用图标 */
 const rowIcon = [
   resizable(),
   frame({ width: 24, height: 24 }),
   clipShape("roundedRectangle", 6),
+];
+
+/** 「开始连点」按钮里的应用图标：比行内大一圈，和 20pt 文字更配 */
+const startIcon = [
+  resizable(),
+  frame({ width: 32, height: 32 }),
+  clipShape("roundedRectangle", 7),
 ];
 
 /** 点击偏移半径预设（参考截图像素） */
@@ -472,14 +479,14 @@ export default function App() {
                   onPress={begin}
                   modifiers={[
                     buttonStyle("borderedProminent"),
-                    tint("orange"),
+                    tint("blue"),
                     controlSize("extraLarge"),
                     font({ size: 20, weight: "semibold" }),
                   ]}
                 >
-                  <HStack spacing={8}>
+                  <HStack spacing={10}>
                     {targetIcon !== "" && (
-                      <Image uiImage={targetIcon} modifiers={rowIcon} />
+                      <Image uiImage={targetIcon} modifiers={startIcon} />
                     )}
                     <Text>开始连点</Text>
                   </HStack>
