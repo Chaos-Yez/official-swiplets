@@ -239,7 +239,7 @@ export default function App() {
   const capture = () => {
     if (recordingBusy) return;
     setRecordingBusy(true);
-    setDetail("正在跳转勾选的目标对象，3 秒后抓取当前画面并回到本页…");
+    setDetail("正在跳转勾选的目标对象，2 秒后抓取当前画面并回到本页…");
     record().then(
       async (shot) => {
         setRecordingBusy(false);
@@ -644,7 +644,7 @@ export default function App() {
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
-                      ? "1. 点「获取界面布局」会跳转到目标对象，约 3 秒后自动抓取画面并返回。\n2. 在画面上点一下即标记该位置。\n3. 选好要保存的点位后点「保存为点位」，最多 8 个。\n4. 再次抓取会覆盖上一张；截图 10 分钟后自动销毁。"
+                      ? "1. 点「获取界面布局」会跳转到目标对象，约 2 秒后自动抓取画面并返回。\n2. 在画面上点一下即标记该位置。\n3. 选好要保存的点位后点「保存为点位」，最多 8 个。\n4. 再次抓取会覆盖上一张；截图 10 分钟后自动销毁。"
                       : detail}
                   </Text>
                 }

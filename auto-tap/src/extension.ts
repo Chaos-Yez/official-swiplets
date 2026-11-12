@@ -41,7 +41,7 @@ const SWIPT_BUNDLE_ID = "io.nekohasekai.swipt";
 /** 跳转后等待切换动画并给用户准备时间 */
 const LAUNCH_SETTLE_MS = 3000;
 /** 坐标记录：跳到游戏后留给用户切到目标画面的时间 */
-const RECORD_DELAY_MS = 3000;
+const RECORD_DELAY_MS = 2000;
 /** 启动后的事件宽限期，避免切换动画里的系统 UI 事件误停 */
 const GRACE_MS = 800;
 /** 连续点击失败多少次后退出 */
