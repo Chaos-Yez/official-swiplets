@@ -8,7 +8,7 @@
       "id": "roco-auto-tap",
       "name": "连点器",
       "version": "0.3.0-nightly",
-      "versionCode": 9,
+      "versionCode": 10,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -25,7 +25,7 @@
         {
           "name": "record",
           "title": "坐标记录",
-          "description": "跳转到勾选的目标游戏并抓取当前画面，返回设置页后点图记录坐标"
+          "description": "跳转到勾选的目标对象并抓取当前画面，返回设置页后点图记录坐标"
         },
         {
           "name": "listApps",
@@ -34,8 +34,8 @@
         }
       ],
       "url": "roco-auto-tap.swiplet",
-      "size": 19906,
-      "sha256": "6a191ec03893530dcf02d5f128e861765682e793e1d0367de453ddda8cb20035"
+      "size": 19887,
+      "sha256": "bcc48cc4f1348b38814ca93d8369ef9678b870fbf16e73ed8258abb23225bebc"
     }
   ]
 }
