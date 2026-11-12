@@ -7,8 +7,8 @@
     {
       "id": "roco-auto-tap",
       "name": "连点器",
-      "version": "0.5.0-nightly",
-      "versionCode": 12,
+      "version": "0.6.0-nightly",
+      "versionCode": 13,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -20,7 +20,7 @@
         {
           "name": "start",
           "title": "开始自动投掷",
-          "description": "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止"
+          "description": "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或锁屏自动停止"
         },
         {
           "name": "record",
@@ -34,8 +34,8 @@
         }
       ],
       "url": "roco-auto-tap.swiplet",
-      "size": 21900,
-      "sha256": "312ff2e8ca1e50cc39ecc3eeff3ab9a5a699596bf27d788e14058b4166a2a23d"
+      "size": 21502,
+      "sha256": "9340f581961d6fcdcf73fca7187397fe5d18e2f84044b23092886e6d5b329561"
     }
   ]
 }
