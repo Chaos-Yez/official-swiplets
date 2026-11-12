@@ -170,7 +170,8 @@ async function runTaps(
       }
     }
     index += 1;
-    await sleep(settings.intervalMs, signal);
+    // 每个点位用自己的间隔；老数据没有该字段时兜底 1 秒
+    await sleep(pointItem.intervalMs > 0 ? pointItem.intervalMs : 1000, signal);
   }
 }
 

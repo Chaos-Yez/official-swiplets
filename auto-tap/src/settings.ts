@@ -60,6 +60,8 @@ export interface TapPoint {
   x: number;
   y: number;
   enabled: boolean;
+  /** 该点位自己的点击间隔（毫秒），默认 1000 */
+  intervalMs: number;
 }
 
 /** 跳转目标白名单中的一款游戏 */
@@ -70,7 +72,8 @@ export interface Game {
 }
 
 export interface Settings {
-  intervalMs: number;
+  /** @deprecated 旧版全局间隔，仅用于把老存档迁移成「每点位间隔」；新数据不再写入 */
+  intervalMs?: number;
   /** 每次点击的随机偏移半径（参考截图像素），0 = 精确点击 */
   jitterPx: number;
   points: TapPoint[];
@@ -102,13 +105,12 @@ export function defaultGames(): Game[] {
 
 export function defaultSettings(): Settings {
   return {
-    intervalMs: 1000,
     jitterPx: DEFAULT_JITTER_PX,
     points: [
-      { id: "p1", name: pointName(0), x: 1760, y: 780, enabled: true },
-      { id: "p2", name: pointName(1), x: -1, y: -1, enabled: false },
-      { id: "p3", name: pointName(2), x: -1, y: -1, enabled: false },
-      { id: "p4", name: pointName(3), x: -1, y: -1, enabled: false },
+      { id: "p1", name: pointName(0), x: 1760, y: 780, enabled: true, intervalMs: 1000 },
+      { id: "p2", name: pointName(1), x: -1, y: -1, enabled: false, intervalMs: 1000 },
+      { id: "p3", name: pointName(2), x: -1, y: -1, enabled: false, intervalMs: 1000 },
+      { id: "p4", name: pointName(3), x: -1, y: -1, enabled: false, intervalMs: 1000 },
     ],
     games: defaultGames(),
     targetGameId: "sample",
@@ -169,8 +171,9 @@ function sanitize(value: unknown): Settings {
     games.some((g) => g.id === raw.targetGameId)
       ? raw.targetGameId
       : games[0]!.id;
+  // 旧版把间隔存在全局；迁移成「每点位间隔」时用它兜底，没有则用 1 秒
+  const legacyInterval = clampInterval(Number(raw.intervalMs));
   return {
-    intervalMs: clampInterval(Number(raw.intervalMs)),
     jitterPx: clampJitter(Number(raw.jitterPx)),
     points: raw.points.slice(0, MAX_POINTS).map((p, index) => {
       const item = (p ?? {}) as Partial<TapPoint>;
@@ -183,6 +186,7 @@ function sanitize(value: unknown): Settings {
         x: Number.isFinite(x) && x >= 0 ? Math.round(x) : -1,
         y: Number.isFinite(y) && y >= 0 ? Math.round(y) : -1,
         enabled: Boolean(item.enabled),
+        intervalMs: clampInterval(Number(item.intervalMs ?? legacyInterval)),
       };
     }),
     games,
