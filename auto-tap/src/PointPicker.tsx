@@ -20,6 +20,7 @@
 // boxW/boxH）算出来，图片、触摸、红点三者全部按这个框换算，
 // 保证「手指点在哪、红点就画在哪、记下的坐标就是那个像素」。
 import { useRef } from "react";
+import type { ComponentRef } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import type { GestureResponderEvent } from "react-native";
 
@@ -85,7 +86,7 @@ export function PointPicker({
   const cy = boxY + (landscape ? mx : my) * boxH;
 
   // 回调用 ref 保存最新值：测量是异步回调，避免拿到过期的尺寸/回调
-  const boxRef = useRef<View | null>(null);
+  const boxRef = useRef<ComponentRef<typeof View> | null>(null);
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
   const sizeRef = useRef({ w: boxW, h: boxH, x: boxX, y: boxY, rot: landscape });
