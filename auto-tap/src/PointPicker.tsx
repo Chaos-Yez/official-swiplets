@@ -4,7 +4,8 @@
 //
 // 图片按真实像素比例等比缩放：宽、高各设上限，用 contain 渲染。
 // 这样竖屏截图不会被硬拉成 320×数百的怪异形状，横屏效果保持不变。
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useRef } from "react";
+import { Image, PanResponder, StyleSheet, Text, View } from "react-native";
 
 /** 显示区域的两个上限，取较小的缩放比，保证任何方向上都不变形 */
 const MAX_WIDTH = 320;
@@ -43,6 +44,35 @@ export function PointPicker({
   const mx = marker ? clamp01(marker.x) * displayWidth : 0;
   const my = marker ? clamp01(marker.y) * displayHeight : 0;
 
+  // 触摸与拖动统一走 PanResponder：按下即定位到触点，按住拖动则按位移实时精确定位。
+  // 用 ref 保存最新回调与显示尺寸，避免拖动途中因重渲染重建手势导致中断。
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
+  const sizeRef = useRef({ w: displayWidth, h: displayHeight });
+  sizeRef.current = { w: displayWidth, h: displayHeight };
+  const startRef = useRef({ x: 0, y: 0 });
+  const pickAt = (x: number, y: number) => {
+    const { w, h } = sizeRef.current;
+    onPickRef.current(clamp01(x / w), clamp01(y / h));
+  };
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (event) => {
+        const { locationX, locationY } = event.nativeEvent;
+        startRef.current = { x: locationX, y: locationY };
+        pickAt(locationX, locationY);
+      },
+      onPanResponderMove: (_event, gesture) => {
+        pickAt(
+          startRef.current.x + gesture.dx,
+          startRef.current.y + gesture.dy,
+        );
+      },
+    }),
+  ).current;
+
   return (
     <View
       style={{
@@ -50,38 +80,23 @@ export function PointPicker({
         height: displayHeight,
         backgroundColor: "#1C1C1E",
       }}
+      {...panResponder.panHandlers}
     >
-      <Pressable
-        onPress={(event) => {
-          const { locationX, locationY } = event.nativeEvent;
-          onPick(
-            clamp01(locationX / displayWidth),
-            clamp01(locationY / displayHeight),
-          );
-        }}
-      >
-        <Image
-          source={{ uri }}
-          // contain：即使上游传来的宽高不准，也只会留边、不会拉伸变形
-          resizeMode="contain"
-          style={{ width: displayWidth, height: displayHeight }}
-        />
-      </Pressable>
+      <Image
+        source={{ uri }}
+        // contain：即使上游传来的宽高不准，也只会留边、不会拉伸变形
+        resizeMode="contain"
+        style={{ width: displayWidth, height: displayHeight }}
+      />
 
       {marker !== null && (
         // pointerEvents=none：标记只是看的，不挡住继续点选
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <View style={[styles.crossH, { top: my - 0.5 }]} />
-          <View style={[styles.crossV, { left: mx - 0.5 }]} />
           <View
-            style={[
-              styles.ringOuter,
-              { left: mx - RING / 2, top: my - RING / 2 },
-            ]}
+            style={[styles.ring, { left: mx - RING / 2, top: my - RING / 2 }]}
           >
-            <View style={styles.ringInner} />
+            <View style={styles.dot} />
           </View>
-          <View style={[styles.dot, { left: mx - 3, top: my - 3 }]} />
           {label !== "" && (
             <View
               style={[
@@ -102,47 +117,23 @@ export function PointPicker({
 }
 
 const styles = StyleSheet.create({
-  // 红色十字线贯穿整张图，方便对齐要点的位置
-  crossH: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: "rgba(255, 45, 45, 0.9)",
-  },
-  crossV: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: "rgba(255, 45, 45, 0.9)",
-  },
-  // 外白内红双环，深浅画面上都醒目
-  ringOuter: {
+  // 简洁单环：红圈 + 中心红点，深浅画面上都醒目，且尽量不遮挡画面
+  ring: {
     position: "absolute",
     width: RING,
     height: RING,
     borderRadius: RING / 2,
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
+    borderWidth: 2.5,
+    borderColor: "#FF2D2D",
+    backgroundColor: "rgba(255, 45, 45, 0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
-  ringInner: {
-    width: RING - 10,
-    height: RING - 10,
-    borderRadius: (RING - 10) / 2,
-    borderWidth: 3,
-    borderColor: "#FF2D2D",
-  },
   dot: {
-    position: "absolute",
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: "#FF2D2D",
-    borderWidth: 1,
-    borderColor: "#FFFFFF",
   },
   badge: {
     position: "absolute",
