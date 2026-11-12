@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // start    : 跳转到「勾选的目标对象」→ 按已启用点位的顺序循环点击，间隔可配置。
 // record   : 跳转同一个目标对象 → 抓一张当前画面 → 回到 Swipt 供点选记录坐标。
-//            抓图前先销毁上一张，截图 10 分钟后由设置页/readRecording 自动删除。
+//            抓图前先销毁上一张，过期截图由设置页 / readRecording 自动清理。
 // listApps : 读取设备已安装应用，供设置页维护跳转白名单。
 //
 // 【架构要点，别再改回去】
@@ -40,8 +40,6 @@ const LAUNCH_SETTLE_MS = 1200;
 const RECORD_DELAY_MS = 3000;
 /** 启动后的事件宽限期，避免切换动画里的系统 UI 事件误停 */
 const GRACE_MS = 800;
-/** 每次点击的随机偏移半径（参考截图像素，约 ±10px） */
-const JITTER_PX = 10;
 /** 连续点击失败多少次后退出 */
 const MAX_FAILURES = 3;
 
@@ -74,9 +72,9 @@ function orientScreen(raw: {
     : { width: raw.width, height: raw.height };
 }
 
-/** 参考截图坐标 -> 当前屏幕坐标，并加一点随机偏移 */
-function pointOf(p: TapPoint, screen: ScreenSize): Point {
-  const jitter = (JITTER_PX * screen.width) / REF_W;
+/** 参考截图坐标 -> 当前屏幕坐标，并加上可配置的随机偏移 */
+function pointOf(p: TapPoint, screen: ScreenSize, jitterPx: number): Point {
+  const jitter = (jitterPx * screen.width) / REF_W;
   const angle = Math.random() * Math.PI * 2;
   const distance = jitter * Math.sqrt(Math.random());
   return [
@@ -142,7 +140,7 @@ async function runTaps(
     }
 
     const pointItem = active[index % active.length]!;
-    const point = pointOf(pointItem, screen);
+    const point = pointOf(pointItem, screen, settings.jitterPx);
     report.point = `${pointItem.name} (${Math.round(point[0])}, ${Math.round(point[1])})`;
     try {
       await input.tap(point, { signal });

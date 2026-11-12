@@ -1,5 +1,5 @@
 // 连点器设置页。主页面只留主按钮和几个入口，
-// 「坐标记录」与「目标对象」各自再进一层子页面（参照官方「跳过广告」插件）。
+// 「坐标记录」「目标对象」「点击间隔」「点击偏移」各自再进一层子页面。
 // 配置直接读写 dataDirectory，与 Action 引擎共享。
 import {
   Button,
@@ -45,9 +45,12 @@ import { PointPicker } from "./PointPicker";
 import {
   APP_VERSION,
   clampInterval,
+  clampJitter,
   clearRecording,
+  DEFAULT_JITTER_PX,
   makeGameId,
   MAX_GAMES,
+  MAX_JITTER_PX,
   MAX_POINTS,
   pointName,
   readRecording,
@@ -96,13 +99,16 @@ const INTERVAL_OPTIONS: [number, string][] = [
   [5000, "5 秒"],
 ];
 
-type Phase = "idle" | "running" | "done" | "failed";
-const phaseText: Record<Phase, string> = {
-  idle: "待机",
-  running: "运行中",
-  done: "已停止",
-  failed: "启动失败",
-};
+/** 点击偏移半径预设（参考截图像素） */
+const JITTER_OPTIONS: [number, string][] = [
+  [0, "关闭（精确点击）"],
+  [5, "±5 像素"],
+  [10, "±10 像素（默认）"],
+  [15, "±15 像素"],
+  [20, "±20 像素"],
+  [30, "±30 像素"],
+  [50, "±50 像素"],
+];
 
 interface InstalledApp {
   bundleId: string;
@@ -124,7 +130,7 @@ export default function App() {
   const [coordY, setCoordY] = useState("");
   const [targetIndex, setTargetIndex] = useState(0);
   const [customInterval, setCustomInterval] = useState("");
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [customJitter, setCustomJitter] = useState("");
   const [detail, setDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
@@ -143,7 +149,7 @@ export default function App() {
     }, () => setRecording(null));
   }, []);
 
-  // 截图只保留 10 分钟：到点销毁文件、清掉红色标记
+  // 截图保留期：到点销毁文件、清掉红色标记
   useEffect(() => {
     if (recording === null) return;
     const remain = RECORD_TTL_MS - (Date.now() - recording.time);
@@ -159,7 +165,7 @@ export default function App() {
       setRecording(null);
       setCoordX("");
       setCoordY("");
-      setDetail("截图已超过 10 分钟，已自动销毁。需要时重新点「坐标记录」。");
+      setDetail("截图已过期，已自动销毁。需要时重新点「坐标记录」。");
     }, remain);
     return () => clearTimeout(timer);
   }, [recording?.time]);
@@ -203,12 +209,10 @@ export default function App() {
   const begin = () => {
     if (busy || settings === null) return;
     setBusy(true);
-    setPhase("running");
     setDetail("正在跳转勾选的目标对象并按已启用点位连点…");
     start().then(
       (report) => {
         setBusy(false);
-        setPhase("done");
         setDetail(
           `点击 ${report.taps} 次 / 启用 ${report.points} 个点位 · ${report.stopReason}\n` +
             `屏幕 ${report.screen}\n` +
@@ -219,7 +223,6 @@ export default function App() {
       },
       (error: Error) => {
         setBusy(false);
-        setPhase("failed");
         setDetail(error.message);
       },
     );
@@ -305,6 +308,40 @@ export default function App() {
     setDetail(`坐标 (${x}, ${y}) 已保存，勾选启用后即会参与点击。`);
   };
 
+  /** 点击间隔子页：应用自定义毫秒 */
+  const applyCustomInterval = () => {
+    if (settings === null) return;
+    const value = Number(customInterval);
+    if (
+      customInterval.trim() === "" ||
+      !Number.isFinite(value) ||
+      value <= 0
+    ) {
+      setDetail("请输入有效的毫秒数");
+      return;
+    }
+    const intervalMs = clampInterval(value);
+    update({ ...settings, intervalMs });
+    setDetail(`间隔已设为 ${intervalMs} 毫秒`);
+  };
+
+  /** 点击偏移子页：应用自定义像素 */
+  const applyCustomJitter = () => {
+    if (settings === null) return;
+    const value = Number(customJitter);
+    if (
+      customJitter.trim() === "" ||
+      !Number.isFinite(value) ||
+      value < 0
+    ) {
+      setDetail("请输入有效的像素数（0 表示关闭偏移）");
+      return;
+    }
+    const jitterPx = clampJitter(value);
+    update({ ...settings, jitterPx });
+    setDetail(`点击偏移已设为 ±${jitterPx} 像素`);
+  };
+
   const onMove = (sources: number[], destination: number) => {
     if (settings === null) return;
     const from = sources[0];
@@ -388,6 +425,17 @@ export default function App() {
     ]);
   }
 
+  const jitterOptions = [...JITTER_OPTIONS];
+  if (
+    settings !== null &&
+    !jitterOptions.some(([px]) => px === settings.jitterPx)
+  ) {
+    jitterOptions.push([
+      settings.jitterPx,
+      `自定义 ±${settings.jitterPx} 像素`,
+    ]);
+  }
+
   // 红色标记跟随 X / Y 输入框，手动改坐标也能立刻看到位置
   const parsedX = Number(coordX);
   const parsedY = Number(coordY);
@@ -452,20 +500,25 @@ export default function App() {
                 />
                 <Spacer />
               </HStack>
-              <LabeledContent label="连点状态">
-                <Text>{phaseText[phase]}</Text>
-              </LabeledContent>
             </Section>
 
-            {/* 两个入口：点进去才展开各自的设置项 */}
+            {/* 四个入口：点进去才展开各自的设置项 */}
             <Section
               title="设置"
               footer={
                 <Text modifiers={caption}>
-                  两项设置各自单独一页，主页面保持简洁。坐标记录的截图只在那一页显示，10 分钟后自动销毁。
+                  四项设置各自单独一页，主页面保持简洁。
                 </Text>
               }
             >
+              {/* 目标对象放第一行 */}
+              <NavigationLink value="targets">
+                <LabeledContent label="目标对象">
+                  <Text modifiers={caption}>
+                    {targetGame?.name ?? "洛克王国"} · {currentBundle}
+                  </Text>
+                </LabeledContent>
+              </NavigationLink>
               <NavigationLink value="record">
                 <LabeledContent label="坐标记录">
                   <Text modifiers={caption}>
@@ -475,63 +528,22 @@ export default function App() {
                   </Text>
                 </LabeledContent>
               </NavigationLink>
-              <NavigationLink value="targets">
-                <LabeledContent label="目标对象">
+              <NavigationLink value="interval">
+                <LabeledContent label="点击间隔">
                   <Text modifiers={caption}>
-                    {targetGame?.name ?? "洛克王国"} · {currentBundle}
+                    {settings === null ? "—" : `${settings.intervalMs} 毫秒`}
                   </Text>
                 </LabeledContent>
               </NavigationLink>
-            </Section>
-
-            {/* 点击间隔 */}
-            <Section
-              title="点击间隔"
-              footer={
-                <Text modifiers={caption}>
-                  每一次点击之间的等待时间。间隔越短越像脚本，注意游戏风控。
-                </Text>
-              }
-            >
-              {settings !== null && (
-                <Picker<number>
-                  label="间隔"
-                  selection={settings.intervalMs}
-                  onSelectionChange={(value) =>
-                    update({
-                      ...settings,
-                      intervalMs: clampInterval(Number(value)),
-                    })
-                  }
-                >
-                  {intervalOptions.map(([ms, label]) => (
-                    <Text key={ms} modifiers={[tag(ms)]}>
-                      {label}
-                    </Text>
-                  ))}
-                </Picker>
-              )}
-              <TextField
-                placeholder="自定义毫秒（100 ~ 60000）"
-                onTextChange={setCustomInterval}
-                modifiers={[]}
-              />
-              <Button
-                label="应用自定义间隔"
-                onPress={() => {
-                  if (settings === null) return;
-                  const value = Number(customInterval);
-                  if (!Number.isFinite(value) || value <= 0) {
-                    setDetail("请输入有效的毫秒数");
-                    return;
-                  }
-                  update({
-                    ...settings,
-                    intervalMs: clampInterval(value),
-                  });
-                  setDetail(`间隔已设为 ${clampInterval(value)} 毫秒`);
-                }}
-              />
+              <NavigationLink value="offset">
+                <LabeledContent label="点击偏移">
+                  <Text modifiers={caption}>
+                    {settings === null
+                      ? "—"
+                      : `±${settings.jitterPx} 像素`}
+                  </Text>
+                </LabeledContent>
+              </NavigationLink>
             </Section>
 
             {/* 点击位置：勾选启用 + 拖拽排序 */}
@@ -562,9 +574,16 @@ export default function App() {
                   }}
                 >
                   {({ item, index }) => (
-                    <HStack>
+                    // 一行从左到右：拖动把手 → 点位名 → 坐标 → 绿色开关
+                    <HStack spacing={8}>
                       <Text modifiers={dragHint}>≡</Text>
-                      {/* 名称在前、坐标作为副标题在后，绿色开关仍在最右 */}
+                      <Text>{item.name}</Text>
+                      <Spacer />
+                      <Text modifiers={caption}>
+                        {item.x >= 0
+                          ? `(${item.x}, ${item.y})`
+                          : "未设置坐标"}
+                      </Text>
                       <Toggle
                         isOn={item.enabled}
                         onIsOnChange={(enabled) => {
@@ -572,14 +591,8 @@ export default function App() {
                           points[index] = { ...points[index]!, enabled };
                           update({ ...settings, points });
                         }}
-                      >
-                        <Text>{item.name}</Text>
-                        <Text modifiers={caption}>
-                          {item.x >= 0
-                            ? `(${item.x}, ${item.y})`
-                            : "未设置坐标"}
-                        </Text>
-                      </Toggle>
+                        modifiers={[frame({ width: 56 })]}
+                      />
                     </HStack>
                   )}
                 </List.ForEach>
@@ -618,7 +631,7 @@ export default function App() {
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
-                      ? "跳转勾选的目标对象后 3 秒抓取当前画面并自动返回；在画面上点一下会出现红色标记与坐标。截图只保留 10 分钟，到点自动销毁；再次抓取会覆盖前一张。"
+                      ? "跳转勾选的目标对象后 3 秒抓取当前画面并自动返回；在画面上点一下会出现红色标记与坐标，再次抓取会覆盖前一张。"
                       : detail}
                   </Text>
                 }
@@ -766,6 +779,139 @@ export default function App() {
                   onPress={loadApps}
                   modifiers={[buttonStyle("bordered")]}
                 />
+              </Section>
+            </Form>
+          </Toolbar>
+        </NavigationDestination>
+
+        {/* ============ 点击间隔子页面 ============ */}
+        <NavigationDestination value="interval">
+          <Toolbar modifiers={[navigationTitle("点击间隔")]}>
+            <Form>
+              <Section
+                title="间隔"
+                footer={
+                  <Text modifiers={caption}>
+                    每一次点击之间的等待时间。间隔越短越像脚本，注意游戏风控。
+                  </Text>
+                }
+              >
+                {settings !== null && (
+                  <Picker<number>
+                    label="间隔"
+                    selection={settings.intervalMs}
+                    onSelectionChange={(value) =>
+                      update({
+                        ...settings,
+                        intervalMs: clampInterval(Number(value)),
+                      })
+                    }
+                  >
+                    {intervalOptions.map(([ms, label]) => (
+                      <Text key={ms} modifiers={[tag(ms)]}>
+                        {label}
+                      </Text>
+                    ))}
+                  </Picker>
+                )}
+                <LabeledContent label="当前间隔">
+                  <Text>
+                    {settings === null ? "—" : `${settings.intervalMs} 毫秒`}
+                  </Text>
+                </LabeledContent>
+              </Section>
+
+              <Section
+                title="自定义"
+                footer={
+                  <Text modifiers={caption}>
+                    可填 100 ~ 60000 毫秒；应用后即时保存，下一次连点生效。
+                  </Text>
+                }
+              >
+                <TextField
+                  placeholder="自定义毫秒（100 ~ 60000）"
+                  onTextChange={setCustomInterval}
+                  modifiers={[]}
+                />
+                <Button
+                  label="应用自定义间隔"
+                  onPress={applyCustomInterval}
+                  modifiers={[buttonStyle("bordered")]}
+                />
+                <LabeledContent label="操作结果">
+                  <Text modifiers={caption}>
+                    {detail === "" ? "尚未修改" : detail}
+                  </Text>
+                </LabeledContent>
+              </Section>
+            </Form>
+          </Toolbar>
+        </NavigationDestination>
+
+        {/* ============ 点击偏移子页面 ============ */}
+        <NavigationDestination value="offset">
+          <Toolbar modifiers={[navigationTitle("点击偏移")]}>
+            <Form>
+              <Section
+                title="偏移范围"
+                footer={
+                  <Text modifiers={caption}>
+                    每次点击会在点位附近随机偏移，设 0 则每次都点在同一位置。
+                    数值按参考截图像素计算，过大可能误触相邻按钮。
+                  </Text>
+                }
+              >
+                {settings !== null && (
+                  <Picker<number>
+                    label="偏移"
+                    selection={settings.jitterPx}
+                    onSelectionChange={(value) =>
+                      update({
+                        ...settings,
+                        jitterPx: clampJitter(Number(value)),
+                      })
+                    }
+                  >
+                    {jitterOptions.map(([px, label]) => (
+                      <Text key={px} modifiers={[tag(px)]}>
+                        {label}
+                      </Text>
+                    ))}
+                  </Picker>
+                )}
+                <LabeledContent label="当前偏移">
+                  <Text>
+                    {settings === null
+                      ? `±${DEFAULT_JITTER_PX} 像素`
+                      : `±${settings.jitterPx} 像素`}
+                  </Text>
+                </LabeledContent>
+              </Section>
+
+              <Section
+                title="自定义"
+                footer={
+                  <Text modifiers={caption}>
+                    可填 0 ~ {MAX_JITTER_PX} 像素；偏移为圆形随机分布，越靠中心概率越高。
+                  </Text>
+                }
+              >
+                <TextField
+                  placeholder={`自定义像素（0 ~ ${MAX_JITTER_PX}）`}
+                  onTextChange={setCustomJitter}
+                  modifiers={[]}
+                />
+                <Button
+                  label="应用自定义偏移"
+                  onPress={applyCustomJitter}
+                  modifiers={[buttonStyle("bordered")]}
+                />
+                <LabeledContent label="操作结果">
+                  <Text modifiers={caption}>
+                    {detail === "" ? "尚未修改" : detail}
+                  </Text>
+                </LabeledContent>
               </Section>
             </Form>
           </Toolbar>

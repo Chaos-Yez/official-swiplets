@@ -4,7 +4,7 @@
 import { dataDirectory } from "@swipt/api/file-system";
 
 /** 插件版本（与 package.json 的 version 保持一致） */
-export const APP_VERSION = "0.3.0";
+export const APP_VERSION = "0.4.0";
 
 /** 参考截图分辨率（横屏） */
 export const REF_W = 2217;
@@ -13,6 +13,10 @@ export const MAX_POINTS = 8;
 export const MAX_GAMES = 8;
 /** 默认跳转目标：洛克王国 */
 export const DEFAULT_BUNDLE_ID = "com.tencent.nrc";
+/** 默认点击随机偏移半径（参考截图像素） */
+export const DEFAULT_JITTER_PX = 10;
+/** 点击偏移上限，避免误触相邻按钮 */
+export const MAX_JITTER_PX = 200;
 /** 坐标记录截图保留时长：10 分钟后自动销毁 */
 export const RECORD_TTL_MS = 10 * 60 * 1000;
 
@@ -67,6 +71,8 @@ export interface Game {
 
 export interface Settings {
   intervalMs: number;
+  /** 每次点击的随机偏移半径（参考截图像素），0 = 精确点击 */
+  jitterPx: number;
   points: TapPoint[];
   games: Game[];
   /** 当前勾选、要跳转的游戏 id */
@@ -97,6 +103,7 @@ export function defaultGames(): Game[] {
 export function defaultSettings(): Settings {
   return {
     intervalMs: 1000,
+    jitterPx: DEFAULT_JITTER_PX,
     points: [
       { id: "p1", name: pointName(0), x: 1760, y: 780, enabled: true },
       { id: "p2", name: pointName(1), x: -1, y: -1, enabled: false },
@@ -119,6 +126,12 @@ export function targetBundle(settings: Settings): string {
 export function clampInterval(value: number): number {
   if (!Number.isFinite(value)) return 1000;
   return Math.min(60_000, Math.max(100, Math.round(value)));
+}
+
+/** 偏移半径限幅；旧配置没有此字段（NaN）时回退默认值 */
+export function clampJitter(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_JITTER_PX;
+  return Math.min(MAX_JITTER_PX, Math.max(0, Math.round(value)));
 }
 
 function sanitizeGames(value: unknown): Game[] {
@@ -158,6 +171,7 @@ function sanitize(value: unknown): Settings {
       : games[0]!.id;
   return {
     intervalMs: clampInterval(Number(raw.intervalMs)),
+    jitterPx: clampJitter(Number(raw.jitterPx)),
     points: raw.points.slice(0, MAX_POINTS).map((p, index) => {
       const item = (p ?? {}) as Partial<TapPoint>;
       const x = Number(item.x);
@@ -231,7 +245,7 @@ export async function readRecording(): Promise<Recording | null> {
     return null;
   }
   const time = Number(raw.time) || 0;
-  // 超过 10 分钟立即销毁，不把过期截图留在磁盘上、也不显示在界面上
+  // 超过保留时长立即销毁，不把过期截图留在磁盘上、也不显示在界面上
   if (time <= 0 || Date.now() - time > RECORD_TTL_MS) {
     await clearRecording();
     return null;
