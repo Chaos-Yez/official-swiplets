@@ -88,6 +88,13 @@ const appIcon = [
   clipShape("roundedRectangle", 9),
 ];
 
+/** 设置行内的小应用图标 */
+const rowIcon = [
+  resizable(),
+  frame({ width: 24, height: 24 }),
+  clipShape("roundedRectangle", 6),
+];
+
 const INTERVAL_OPTIONS: [number, string][] = [
   [300, "0.3 秒"],
   [500, "0.5 秒"],
@@ -459,6 +466,15 @@ export default function App() {
       : settings.games.find((g) => g.id === settings.targetGameId);
   const targetIcon =
     installed.find((app) => app.bundleId === currentBundle)?.icon ?? "";
+  // 目标对象只显示应用名称：优先已安装应用里的真实名称，其次设置里的名字，最后回退包名
+  const targetAppName =
+    installed.find((app) => app.bundleId === currentBundle)?.name ?? "";
+  const targetDisplayName =
+    targetAppName !== ""
+      ? targetAppName
+      : targetGame !== undefined && targetGame.name !== currentBundle
+        ? targetGame.name
+        : currentBundle;
   const filter = appFilter.trim().toLowerCase();
   const filteredApps = installed
     .filter(
@@ -473,7 +489,7 @@ export default function App() {
     <Host style={{ flex: 1 }}>
       <NavigationStack>
         {/* ============ 主页面 ============ */}
-        <Toolbar modifiers={[navigationTitle("连点器")]}>
+        <Toolbar modifiers={[navigationTitle("连点器"), onAppear(loadApps)]}>
           <List>
             {/* 最上方：居中、放大的主按钮 */}
             <Section
@@ -507,11 +523,12 @@ export default function App() {
               {/* 目标对象放第一行 */}
               <NavigationLink value="targets">
                 <LabeledContent label="目标对象">
-                  <Text modifiers={caption}>
-                    {targetGame && targetGame.name !== currentBundle
-                      ? `${targetGame.name} · ${currentBundle}`
-                      : currentBundle}
-                  </Text>
+                  <HStack spacing={6}>
+                    {targetIcon !== "" && (
+                      <Image uiImage={targetIcon} modifiers={rowIcon} />
+                    )}
+                    <Text modifiers={caption}>{targetDisplayName}</Text>
+                  </HStack>
                 </LabeledContent>
               </NavigationLink>
               <NavigationLink value="record">
@@ -729,14 +746,7 @@ export default function App() {
                     <Image uiImage={targetIcon} modifiers={appIcon} />
                   )}
                   <VStack alignment="leading" spacing={2}>
-                    <Text>
-                      {targetGame && targetGame.name !== currentBundle
-                        ? targetGame.name
-                        : currentBundle}
-                    </Text>
-                    {targetGame && targetGame.name !== currentBundle && (
-                      <Text modifiers={caption}>{currentBundle}</Text>
-                    )}
+                    <Text>{targetDisplayName}</Text>
                   </VStack>
                   <Spacer />
                 </HStack>
@@ -773,10 +783,7 @@ export default function App() {
                       {app.icon !== "" && (
                         <Image uiImage={app.icon} modifiers={appIcon} />
                       )}
-                      <VStack alignment="leading" spacing={2}>
-                        <Text>{app.name}</Text>
-                        <Text modifiers={caption}>{app.bundleId}</Text>
-                      </VStack>
+                      <Text>{app.name}</Text>
                     </HStack>
                   </Toggle>
                 ))}
