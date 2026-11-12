@@ -7,8 +7,8 @@
     {
       "id": "roco-auto-tap",
       "name": "连点器",
-      "version": "0.2.0-nightly",
-      "versionCode": 8,
+      "version": "0.3.0-nightly",
+      "versionCode": 9,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -20,7 +20,7 @@
         {
           "name": "start",
           "title": "开始自动投掷",
-          "description": "跳转到洛克王国并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止"
+          "description": "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止"
         },
         {
           "name": "record",
@@ -30,12 +30,12 @@
         {
           "name": "listApps",
           "title": "读取已安装应用",
-          "description": "列出设备上已安装的应用，供设置页选择要跳转的游戏"
+          "description": "列出设备上已安装的应用与图标，供设置页选择目标对象"
         }
       ],
       "url": "roco-auto-tap.swiplet",
-      "size": 19324,
-      "sha256": "c41fe81bbe0ae42b508868ef24e8143013e13ff2c9c93b4e35be819cc5b89acc"
+      "size": 19906,
+      "sha256": "6a191ec03893530dcf02d5f128e861765682e793e1d0367de453ddda8cb20035"
     }
   ]
 }
