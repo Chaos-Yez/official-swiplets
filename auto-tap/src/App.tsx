@@ -586,11 +586,13 @@ export default function App() {
                   }}
                 >
                   {({ item, index }) => (
-                    // 排列：放大的把手 → 点位名 → 坐标（这两项靠左对齐）
+                    // 排列：放大的把手 → 点位名 → 坐标（这两项都不换行、不压缩）
                     //       → 弹性留白 → 间隔输入（毫秒）→ 绿色开关
-                    <HStack spacing={8}>
+                    <HStack spacing={6}>
                       <Text modifiers={dragHint}>≡</Text>
-                      <Text>{item.name}</Text>
+                      <Text modifiers={[fixedSize({ horizontal: true })]}>
+                        {item.name}
+                      </Text>
                       <Text modifiers={coordCaption}>
                         {item.x >= 0 ? `(${item.x}, ${item.y})` : "未设置"}
                       </Text>
@@ -613,7 +615,7 @@ export default function App() {
                           };
                           update({ ...settings, points });
                         }}
-                        modifiers={[frame({ width: 50 })]}
+                        modifiers={[frame({ width: 44 })]}
                       />
                       <Text modifiers={caption}>毫秒</Text>
                       <Toggle
