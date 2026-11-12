@@ -4,6 +4,8 @@
 // record   : 跳转同一个目标对象 → 抓一张当前画面 → 回到 Swipt 供点选记录坐标。
 //            抓图前先销毁上一张，过期截图由设置页 / readRecording 自动清理。
 // listApps : 读取设备已安装应用，供设置页维护跳转白名单。
+// 自动停止由 watchStop() 五路并行监控：应用事件 / 前台 / 锁屏 / 屏幕状态 /
+// 系统面板（控制中心、通知中心），任一命中立刻 abort 连点循环。
 //
 // 【架构要点，别再改回去】
 // internal/automation/engine.go: Host.execute() 每次执行 Action 都会 newEngine()
@@ -16,6 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Point } from "@swipt/api";
+import * as accessibility from "@swipt/api/accessibility";
 import * as device from "@swipt/api/device";
 import { dataDirectory } from "@swipt/api/file-system";
 import * as input from "@swipt/api/input";
@@ -40,6 +43,8 @@ const LAUNCH_SETTLE_MS = 1200;
 const RECORD_DELAY_MS = 3000;
 /** 启动后的事件宽限期，避免切换动画里的系统 UI 事件误停 */
 const GRACE_MS = 800;
+/** 系统面板（控制中心/通知中心）轮询间隔 */
+const OVERLAY_POLL_MS = 400;
 /** 连续点击失败多少次后退出 */
 const MAX_FAILURES = 3;
 
@@ -161,34 +166,115 @@ async function runTaps(
   }
 }
 
-/** 前台变化即停止：以当前勾选的目标对象为判断基准 */
-async function watchApps(
+/**
+ * 停止监控。Swipt 源码 foreground.go 明确记录：下拉控制中心时游戏仍持有
+ * foregroundRunning，前台身份与应用事件都不会变化，所以只靠前台判断漏掉
+ * 了这种情况。这里并行监听应用事件、前台、锁屏、屏幕状态四路，再用无障碍
+ * 快照检测盖在游戏上方的系统面板（控制中心 / 通知中心）。
+ */
+async function watchStop(
   signal: AbortSignal,
   stop: AbortController,
   graceUntil: number,
   report: Report,
   target: string,
 ): Promise<void> {
-  try {
-    for await (const event of device.applicationEvents({ signal })) {
-      if (signal.aborted || Date.now() < graceUntil) continue;
-      if (event.type === "background" && event.bundleId === target) {
-        report.stopReason = "目标对象进入后台";
-        stop.abort();
-        return;
+  const halt = (reason: string) => {
+    if (stop.signal.aborted) return;
+    report.stopReason = reason;
+    stop.abort();
+  };
+  const ready = () => !signal.aborted && Date.now() >= graceUntil;
+
+  const appEvents = (async () => {
+    try {
+      for await (const event of device.applicationEvents({ signal })) {
+        if (!ready()) continue;
+        if (event.type === "background" && event.bundleId === target) {
+          halt("目标对象进入后台");
+          return;
+        }
+        if (
+          (event.type === "launch" || event.type === "foreground") &&
+          event.bundleId !== target
+        ) {
+          halt(`切换到 ${event.bundleId}`);
+          return;
+        }
       }
-      if (
-        (event.type === "launch" || event.type === "foreground") &&
-        event.bundleId !== target
-      ) {
-        report.stopReason = `切换到 ${event.bundleId}`;
-        stop.abort();
-        return;
+    } catch {
+      // 信号取消 / 设备断开
+    }
+  })();
+
+  const foreground = (async () => {
+    try {
+      for await (const front of device.foregroundApplication.values({ signal })) {
+        if (!ready() || front === "") continue;
+        report.front = front;
+        if (front !== target) {
+          halt(`前台已切换为 ${front}`);
+          return;
+        }
+      }
+    } catch {
+      // 信号取消 / 设备断开
+    }
+  })();
+
+  const lockState = (async () => {
+    try {
+      for await (const isLocked of device.locked.values({ signal })) {
+        if (!ready()) continue;
+        if (isLocked) {
+          halt("设备已锁屏");
+          return;
+        }
+      }
+    } catch {
+      // 信号取消 / 设备断开
+    }
+  })();
+
+  const display = (async () => {
+    try {
+      for await (const state of device.displayState.values({ signal })) {
+        if (!ready()) continue;
+        // dimmed 只是自动亮度变暗，游戏仍在正常显示，不当作离开
+        if (state === "off" || state === "inactiveOn") {
+          halt(`屏幕状态变为 ${state}`);
+          return;
+        }
+      }
+    } catch {
+      // 信号取消 / 设备断开
+    }
+  })();
+
+  // 控制中心 / 通知中心：游戏仍是前台，但 SpringBoard 会把自己的控制面板
+  // 盖在游戏上方。fullScreen 快照的 system 子树里会出现成组的 toggle 控件。
+  const overlay = (async () => {
+    while (!signal.aborted) {
+      await sleep(OVERLAY_POLL_MS, signal);
+      if (!ready()) continue;
+      try {
+        const snap = await accessibility.snapshot({
+          scope: "fullScreen",
+          depth: 5,
+          signal,
+        });
+        const toggles = snap.system?.findAll({ role: "toggle" }) ?? [];
+        if (toggles.length >= 2) {
+          halt("检测到系统面板（控制中心 / 通知中心）");
+          return;
+        }
+      } catch {
+        // 没有辅助功能权限或读取失败：忽略，不误停也不中断点击
       }
     }
-  } catch {
-    // 信号取消 / 设备断开
-  }
+  })();
+
+  await Promise.all([appEvents, foreground, lockState, display, overlay]);
 }
 
 export default defineExtension({
@@ -231,7 +317,7 @@ export default defineExtension({
           (await device.foregroundApplication
             .get({ signal })
             .catch(() => "")) || "(读取失败)";
-        const watcher = watchApps(
+        const watcher = watchStop(
           loopSignal,
           stop,
           Date.now() + GRACE_MS,

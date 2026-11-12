@@ -503,14 +503,7 @@ export default function App() {
             </Section>
 
             {/* 四个入口：点进去才展开各自的设置项 */}
-            <Section
-              title="设置"
-              footer={
-                <Text modifiers={caption}>
-                  四项设置各自单独一页，主页面保持简洁。
-                </Text>
-              }
-            >
+            <Section title="设置">
               {/* 目标对象放第一行 */}
               <NavigationLink value="targets">
                 <LabeledContent label="目标对象">
@@ -597,11 +590,14 @@ export default function App() {
                   )}
                 </List.ForEach>
               )}
-              <Button
-                label="添加点位"
-                systemImage="plus"
-                onPress={addPoint}
-              />
+              <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                <Spacer />
+                <Button
+                  label="添加点位"
+                  systemImage="plus"
+                  onPress={addPoint}
+                />
+              </HStack>
             </Section>
 
             {/* 版本号 */}
@@ -701,11 +697,14 @@ export default function App() {
                     )}
                   </Picker>
                 )}
-                <Button
-                  label="保存为点位"
-                  systemImage="square.and.arrow.down"
-                  onPress={applyCoordinate}
-                />
+                <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                  <Spacer />
+                  <Button
+                    label="保存为点位"
+                    systemImage="square.and.arrow.down"
+                    onPress={applyCoordinate}
+                  />
+                </HStack>
               </Section>
             </List>
           </Toolbar>
@@ -773,12 +772,15 @@ export default function App() {
                     </HStack>
                   </Toggle>
                 ))}
-                <Button
-                  label={appsBusy ? "读取中…" : "刷新应用列表"}
-                  systemImage="arrow.triangle.2.circlepath"
-                  onPress={loadApps}
-                  modifiers={[buttonStyle("bordered")]}
-                />
+                <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                  <Spacer />
+                  <Button
+                    label={appsBusy ? "读取中…" : "刷新应用列表"}
+                    systemImage="arrow.triangle.2.circlepath"
+                    onPress={loadApps}
+                    modifiers={[buttonStyle("bordered")]}
+                  />
+                </HStack>
               </Section>
             </Form>
           </Toolbar>
@@ -834,16 +836,14 @@ export default function App() {
                   onTextChange={setCustomInterval}
                   modifiers={[]}
                 />
-                <Button
-                  label="应用自定义间隔"
-                  onPress={applyCustomInterval}
-                  modifiers={[buttonStyle("bordered")]}
-                />
-                <LabeledContent label="操作结果">
-                  <Text modifiers={caption}>
-                    {detail === "" ? "尚未修改" : detail}
-                  </Text>
-                </LabeledContent>
+                <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                  <Spacer />
+                  <Button
+                    label="应用自定义间隔"
+                    onPress={applyCustomInterval}
+                    modifiers={[buttonStyle("bordered")]}
+                  />
+                </HStack>
               </Section>
             </Form>
           </Toolbar>
@@ -902,16 +902,14 @@ export default function App() {
                   onTextChange={setCustomJitter}
                   modifiers={[]}
                 />
-                <Button
-                  label="应用自定义偏移"
-                  onPress={applyCustomJitter}
-                  modifiers={[buttonStyle("bordered")]}
-                />
-                <LabeledContent label="操作结果">
-                  <Text modifiers={caption}>
-                    {detail === "" ? "尚未修改" : detail}
-                  </Text>
-                </LabeledContent>
+                <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                  <Spacer />
+                  <Button
+                    label="应用自定义偏移"
+                    onPress={applyCustomJitter}
+                    modifiers={[buttonStyle("bordered")]}
+                  />
+                </HStack>
               </Section>
             </Form>
           </Toolbar>
