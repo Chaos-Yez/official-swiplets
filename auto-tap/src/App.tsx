@@ -479,7 +479,7 @@ export default function App() {
                   onPress={begin}
                   modifiers={[
                     buttonStyle("borderedProminent"),
-                    tint("blue"),
+                    tint("#5AC8FA"),
                     controlSize("extraLarge"),
                     font({ size: 20, weight: "semibold" }),
                   ]}
@@ -499,11 +499,13 @@ export default function App() {
             <Section title="设置">
               <NavigationLink value="record">
                 <LabeledContent label="获取坐标">
-                  <Text modifiers={caption}>
-                    {recording === null
-                      ? "尚未记录画面"
-                      : `已有画面 · ${recording.width}×${recording.height}`}
-                  </Text>
+                  {/* 右侧显示目标对象的图标与名称，点进去仍是「获取坐标」子页面 */}
+                  <HStack spacing={6}>
+                    {targetIcon !== "" && (
+                      <Image uiImage={targetIcon} modifiers={rowIcon} />
+                    )}
+                    <Text modifiers={caption}>{targetDisplayName}</Text>
+                  </HStack>
                 </LabeledContent>
               </NavigationLink>
               <NavigationLink value="offset">
@@ -621,17 +623,16 @@ export default function App() {
         <NavigationDestination value="record">
           <Toolbar modifiers={[navigationTitle("获取坐标")]}>
             <List>
-              {/* 第一行：目标对象设置（从主页面「设置」移过来） */}
-              <Section>
+              {/* 第一行：目标对象。标题在卡片外上方，行内左侧（左对齐）放大显示图标与名称 */}
+              <Section header={<Text>目标对象</Text>}>
                 <NavigationLink value="targets">
-                  <LabeledContent label="目标对象">
-                    <HStack spacing={6}>
-                      {targetIcon !== "" && (
-                        <Image uiImage={targetIcon} modifiers={rowIcon} />
-                      )}
-                      <Text modifiers={caption}>{targetDisplayName}</Text>
-                    </HStack>
-                  </LabeledContent>
+                  <HStack spacing={10}>
+                    {targetIcon !== "" && (
+                      <Image uiImage={targetIcon} modifiers={appIcon} />
+                    )}
+                    <Text>{targetDisplayName}</Text>
+                    <Spacer />
+                  </HStack>
                 </NavigationLink>
               </Section>
 
@@ -648,7 +649,6 @@ export default function App() {
                   <Spacer />
                   <Button
                     label={recordingBusy ? "正在获取…" : "获取界面布局"}
-                    systemImage="mappin.and.ellipse"
                     onPress={capture}
                     modifiers={[buttonStyle("bordered"), tint("orange")]}
                   />
