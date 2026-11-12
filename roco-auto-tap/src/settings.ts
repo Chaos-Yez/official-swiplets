@@ -3,10 +3,16 @@
 // dataDirectory 按 swiplet 目录落地，两边读写同一份文件即可通信。
 import { dataDirectory } from "@swipt/api/file-system";
 
+/** 插件版本（与 package.json 的 version 保持一致） */
+export const APP_VERSION = "0.2.0";
+
 /** 参考截图分辨率（横屏） */
 export const REF_W = 2217;
 export const REF_H = 1024;
 export const MAX_POINTS = 8;
+export const MAX_GAMES = 8;
+/** 默认跳转目标：洛克王国 */
+export const DEFAULT_BUNDLE_ID = "com.tencent.nrc";
 /** 坐标记录截图保留时长：10 分钟后自动销毁 */
 export const RECORD_TTL_MS = 10 * 60 * 1000;
 
@@ -20,6 +26,16 @@ const CN_NUM = ["一", "二", "三", "四", "五", "六", "七", "八"];
 /** 点位统一按序号命名，拖拽排序后名称始终与顺序一致 */
 export function pointName(index: number): string {
   return `点位${CN_NUM[index] ?? index + 1}`;
+}
+
+/** 生成一个不重复的条目 id */
+export function makeGameId(): string {
+  return `g${Date.now()}${Math.floor(Math.random() * 10000)}`;
+}
+
+/** Bundle ID 只接受常见字符，避免误输入导致跳转失败 */
+export function validBundleId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value);
 }
 
 /**
@@ -42,9 +58,19 @@ export interface TapPoint {
   enabled: boolean;
 }
 
+/** 跳转目标白名单中的一款游戏 */
+export interface Game {
+  id: string;
+  name: string;
+  bundleId: string;
+}
+
 export interface Settings {
   intervalMs: number;
   points: TapPoint[];
+  games: Game[];
+  /** 当前勾选、要跳转的游戏 id */
+  targetGameId: string;
 }
 
 /** 最近一次记录的画面与选中的坐标 */
@@ -62,6 +88,12 @@ export interface Recording {
 const settingsFile = () => dataDirectory.file(SETTINGS_FILE);
 const recordFile = () => dataDirectory.file(RECORD_FILE);
 
+export function defaultGames(): Game[] {
+  return [
+    { id: "roco", name: "洛克王国", bundleId: DEFAULT_BUNDLE_ID },
+  ];
+}
+
 export function defaultSettings(): Settings {
   return {
     intervalMs: 1000,
@@ -71,7 +103,17 @@ export function defaultSettings(): Settings {
       { id: "p3", name: pointName(2), x: -1, y: -1, enabled: false },
       { id: "p4", name: pointName(3), x: -1, y: -1, enabled: false },
     ],
+    games: defaultGames(),
+    targetGameId: "roco",
   };
+}
+
+/** 取当前勾选游戏的 Bundle ID；数据异常时回退默认游戏 */
+export function targetBundle(settings: Settings): string {
+  const game = settings.games.find((g) => g.id === settings.targetGameId);
+  return game && validBundleId(game.bundleId)
+    ? game.bundleId
+    : DEFAULT_BUNDLE_ID;
 }
 
 export function clampInterval(value: number): number {
@@ -79,11 +121,41 @@ export function clampInterval(value: number): number {
   return Math.min(60_000, Math.max(100, Math.round(value)));
 }
 
+function sanitizeGames(value: unknown): Game[] {
+  if (!Array.isArray(value)) return defaultGames();
+  const games: Game[] = [];
+  for (const raw of value) {
+    if (games.length >= MAX_GAMES) break;
+    if (typeof raw !== "object" || raw === null) continue;
+    const item = raw as Partial<Game>;
+    const bundleId = typeof item.bundleId === "string" ? item.bundleId.trim() : "";
+    if (!validBundleId(bundleId) || games.some((g) => g.bundleId === bundleId)) {
+      continue;
+    }
+    games.push({
+      id: typeof item.id === "string" && item.id !== ""
+        ? item.id
+        : makeGameId(),
+      name: typeof item.name === "string" && item.name !== ""
+        ? item.name
+        : bundleId,
+      bundleId,
+    });
+  }
+  return games.length > 0 ? games : defaultGames();
+}
+
 function sanitize(value: unknown): Settings {
   const fallback = defaultSettings();
   if (typeof value !== "object" || value === null) return fallback;
   const raw = value as Partial<Settings>;
   if (!Array.isArray(raw.points) || raw.points.length === 0) return fallback;
+  const games = sanitizeGames(raw.games);
+  const targetGameId =
+    typeof raw.targetGameId === "string" &&
+    games.some((g) => g.id === raw.targetGameId)
+      ? raw.targetGameId
+      : games[0]!.id;
   return {
     intervalMs: clampInterval(Number(raw.intervalMs)),
     points: raw.points.slice(0, MAX_POINTS).map((p, index) => {
@@ -99,6 +171,8 @@ function sanitize(value: unknown): Settings {
         enabled: Boolean(item.enabled),
       };
     }),
+    games,
+    targetGameId,
   };
 }
 

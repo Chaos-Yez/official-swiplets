@@ -1,7 +1,8 @@
-// 设置页：顶部居中的大号「开始连点」→ 坐标记录 → 点击间隔 → 可勾选 / 可拖拽排序的点击点。
+// 连点器设置页：居中的大号「开始连点」→ 坐标记录 → 跳转游戏白名单 → 点击间隔 → 点击点。
 // 配置直接读写 dataDirectory，与 Action 引擎共享。
 import {
   Button,
+  DisclosureGroup,
   HStack,
   Host,
   LabeledContent,
@@ -32,8 +33,11 @@ import { useEffect, useState } from "react";
 import { actions, exit } from "@swipt/api/swiplet";
 import { PointPicker } from "./PointPicker";
 import {
+  APP_VERSION,
   clampInterval,
   clearRecording,
+  makeGameId,
+  MAX_GAMES,
   MAX_POINTS,
   pointName,
   readRecording,
@@ -42,14 +46,17 @@ import {
   RECORD_TTL_MS,
   REF_H,
   REF_W,
+  targetBundle,
+  validBundleId,
   writeRecording,
   writeSettings,
+  type Game,
   type Recording,
   type Settings,
 } from "./settings";
 import type extension from "./extension";
 
-const { start, record } = actions<typeof extension>();
+const { start, record, listApps } = actions<typeof extension>();
 
 const caption = [
   font({ textStyle: "caption" }),
@@ -80,6 +87,11 @@ const phaseText: Record<Phase, string> = {
   failed: "启动失败",
 };
 
+interface InstalledApp {
+  bundleId: string;
+  name: string;
+}
+
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [recording, setRecording] = useState<Recording | null>(null);
@@ -91,6 +103,11 @@ export default function App() {
   const [detail, setDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
+  const [installed, setInstalled] = useState<InstalledApp[]>([]);
+  const [appsBusy, setAppsBusy] = useState(false);
+  const [appFilter, setAppFilter] = useState("");
+  const [newGameName, setNewGameName] = useState("");
+  const [newGameBundle, setNewGameBundle] = useState("");
 
   useEffect(() => {
     readSettings().then(setSettings, () => setSettings(null));
@@ -133,7 +150,7 @@ export default function App() {
     if (busy || settings === null) return;
     setBusy(true);
     setPhase("running");
-    setDetail("正在跳转游戏并按已启用点位连点…");
+    setDetail("正在跳转勾选的目标游戏并按已启用点位连点…");
     start().then(
       (report) => {
         setBusy(false);
@@ -154,11 +171,11 @@ export default function App() {
     );
   };
 
-  /** 坐标记录：跳游戏 → 抓当前画面 → 自动回到设置页 */
+  /** 坐标记录：跳勾选的游戏 → 抓当前画面 → 自动回到设置页 */
   const capture = () => {
     if (recordingBusy) return;
     setRecordingBusy(true);
-    setDetail("正在跳转游戏，3 秒后抓取当前画面并回到本页…");
+    setDetail("正在跳转勾选的目标游戏，3 秒后抓取当前画面并回到本页…");
     record().then(
       async (shot) => {
         setRecordingBusy(false);
@@ -266,6 +283,64 @@ export default function App() {
     });
   };
 
+  /** 勾选某个游戏作为跳转目标 */
+  const selectGame = (id: string) => {
+    if (settings === null) return;
+    update({ ...settings, targetGameId: id });
+    const g = settings.games.find((x) => x.id === id);
+    setDetail(`跳转目标已设为 ${g?.name ?? ""} (${g?.bundleId ?? ""})。`);
+  };
+
+  /** 加入白名单并自动勾选；已存在则直接选中 */
+  const addGame = (name: string, bundleId: string) => {
+    if (settings === null) return;
+    const id = bundleId.trim();
+    if (!validBundleId(id)) {
+      setDetail(
+        "Bundle ID 不合法：只能用字母、数字、点、下划线、连字符，且以字母或数字开头。",
+      );
+      return;
+    }
+    const existing = settings.games.find((g) => g.bundleId === id);
+    if (existing !== undefined) {
+      selectGame(existing.id);
+      return;
+    }
+    if (settings.games.length >= MAX_GAMES) {
+      setDetail(`最多 ${MAX_GAMES} 个游戏，请先左滑删除一个。`);
+      return;
+    }
+    const game: Game = {
+      id: makeGameId(),
+      name: name.trim() === "" ? id : name.trim(),
+      bundleId: id,
+    };
+    update({
+      ...settings,
+      games: [...settings.games, game],
+      targetGameId: game.id,
+    });
+    setDetail(`已添加并勾选「${game.name}」(${id})。`);
+  };
+
+  const loadApps = () => {
+    if (appsBusy) return;
+    setAppsBusy(true);
+    listApps().then(
+      (apps) => {
+        setInstalled(apps);
+        setAppsBusy(false);
+        setDetail(
+          `读取到 ${apps.length} 个已安装应用；点名称即可加入白名单并自动勾选。`,
+        );
+      },
+      (error: Error) => {
+        setAppsBusy(false);
+        setDetail(`读取应用列表失败：${error.message}`);
+      },
+    );
+  };
+
   const intervalOptions = [...INTERVAL_OPTIONS];
   if (
     settings !== null &&
@@ -293,17 +368,31 @@ export default function App() {
     ? { x: parsedX / REF_W, y: parsedY / REF_H }
     : null;
 
+  const targetGame =
+    settings === null
+      ? undefined
+      : settings.games.find((g) => g.id === settings.targetGameId);
+  const filter = appFilter.trim().toLowerCase();
+  const filteredApps = installed
+    .filter(
+      (app) =>
+        filter === "" ||
+        app.name.toLowerCase().includes(filter) ||
+        app.bundleId.toLowerCase().includes(filter),
+    )
+    .slice(0, 40);
+
   return (
     <Host style={{ flex: 1 }}>
       <NavigationStack>
-        <Toolbar modifiers={[navigationTitle("自动投掷")]}>
+        <Toolbar modifiers={[navigationTitle("连点器")]}>
           <List>
             {/* 最上方：居中、放大的主按钮 */}
             <Section
               footer={
                 <Text modifiers={caption}>
                   {detail === ""
-                    ? "点「开始连点」会跳转游戏，按下方已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止。"
+                    ? "点「开始连点」会跳转勾选的目标游戏，按下方已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止。"
                     : detail}
                 </Text>
               }
@@ -333,7 +422,7 @@ export default function App() {
               title="坐标记录"
               footer={
                 <Text modifiers={caption}>
-                  跳转游戏后 3 秒抓取当前画面并自动返回本页；在画面上点一下会出现红色标记与坐标。
+                  跳转勾选的目标游戏后 3 秒抓取当前画面并自动返回本页；在画面上点一下会出现红色标记与坐标。
                   截图只保留 10 分钟，到点自动销毁；再次抓取会覆盖前一张，不会越用越占空间。
                 </Text>
               }
@@ -407,6 +496,108 @@ export default function App() {
                 label="保存为点位"
                 systemImage="square.and.arrow.down"
                 onPress={applyCoordinate}
+              />
+            </Section>
+
+            {/* 跳转游戏白名单 */}
+            <Section
+              title="跳转游戏"
+              footer={
+                <Text modifiers={caption}>
+                  勾选一个游戏后，「开始连点」和「坐标记录」都会跳转到它，自动停止的判断也以它为准。
+                  默认洛克王国；可从已安装应用点选添加，也可手动填 Bundle ID，最多 {MAX_GAMES} 个，左滑可删除（至少保留一个）。
+                </Text>
+              }
+            >
+              {settings !== null && (
+                <LabeledContent label="当前目标">
+                  <Text
+                    modifiers={[
+                      font({ design: "monospaced" }),
+                      textSelection(true),
+                    ]}
+                  >
+                    {targetGame?.name ?? "洛克王国"} · {targetBundle(settings)}
+                  </Text>
+                </LabeledContent>
+              )}
+              {settings !== null && (
+                <List.ForEach
+                  data={settings.games}
+                  keyExtractor={(item) => item.id}
+                  onDelete={(indices) => {
+                    const games = [...settings.games];
+                    for (const index of [...indices].sort((a, b) => b - a)) {
+                      if (games.length > 1) games.splice(index, 1);
+                    }
+                    const targetGameId = games.some(
+                      (g) => g.id === settings.targetGameId,
+                    )
+                      ? settings.targetGameId
+                      : games[0]!.id;
+                    update({ ...settings, games, targetGameId });
+                  }}
+                >
+                  {({ item }) => (
+                    <HStack>
+                      <Text modifiers={caption}>{item.bundleId}</Text>
+                      <Toggle
+                        label={item.name}
+                        isOn={item.id === settings.targetGameId}
+                        onIsOnChange={(on) => {
+                          if (on) selectGame(item.id);
+                        }}
+                      />
+                    </HStack>
+                  )}
+                </List.ForEach>
+              )}
+              <DisclosureGroup label="从已安装应用添加（点名称即加入并勾选）">
+                <Button
+                  label={appsBusy ? "读取中…" : "读取已安装应用"}
+                  systemImage="arrow.triangle.2.circlepath"
+                  onPress={loadApps}
+                  modifiers={[buttonStyle("bordered")]}
+                />
+                <TextField
+                  placeholder="按名称或 Bundle ID 筛选"
+                  onTextChange={setAppFilter}
+                  modifiers={[]}
+                />
+                {installed.length > 0 && filteredApps.length === 0 && (
+                  <Text modifiers={caption}>没有匹配的应用</Text>
+                )}
+                {filteredApps.map((app) => (
+                  <Button
+                    key={app.bundleId}
+                    label={`${app.name} · ${app.bundleId}`}
+                    onPress={() => addGame(app.name, app.bundleId)}
+                  />
+                ))}
+                {installed.length > 40 && (
+                  <Text modifiers={caption}>
+                    只显示前 40 个，可用上方输入框筛选。
+                  </Text>
+                )}
+              </DisclosureGroup>
+              <TextField
+                placeholder="游戏名称（可选）"
+                onTextChange={setNewGameName}
+                modifiers={[]}
+              />
+              <TextField
+                placeholder="Bundle ID，例如 com.tencent.nrc"
+                onTextChange={setNewGameBundle}
+                modifiers={[]}
+              />
+              <Button
+                label="添加并勾选"
+                systemImage="plus"
+                onPress={() => {
+                  addGame(newGameName, newGameBundle);
+                  setNewGameName("");
+                  setNewGameBundle("");
+                }}
               />
             </Section>
 
@@ -511,6 +702,13 @@ export default function App() {
                 systemImage="plus"
                 onPress={addPoint}
               />
+            </Section>
+
+            {/* 版本号 */}
+            <Section>
+              <LabeledContent label="版本">
+                <Text modifiers={caption}>连点器 v{APP_VERSION}</Text>
+              </LabeledContent>
             </Section>
           </List>
           <Toolbar.Content>

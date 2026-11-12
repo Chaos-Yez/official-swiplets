@@ -1,11 +1,11 @@
 {
   "name": "roco-auto-tap",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "swiplet": {
     "id": "roco-auto-tap",
-    "name": "洛克王国 · 自动投掷",
-    "versionCode": 1,
+    "name": "连点器",
+    "versionCode": 8,
     "icon": { "color": "orange", "symbol": "hand.tap.fill" },
     "app": "./src/App.tsx",
     "extension": "./src/extension.ts"

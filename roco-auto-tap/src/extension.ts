@@ -1,8 +1,9 @@
-// 洛克王国 · 自动投掷 (Swiplet)
+// 连点器 (Swiplet)
 // ---------------------------------------------------------------------------
-// start  : 跳转 com.tencent.nrc → 按「已启用点位」的顺序循环点击，间隔可配置。
-// record : 跳转游戏 → 抓一张当前画面 → 回到 Swipt，供设置页点选并「记录坐标」。
-//          抓图前先销毁上一张，截图 10 分钟后由设置页/readRecording 自动删除。
+// start    : 跳转到「勾选的目标游戏」→ 按已启用点位的顺序循环点击，间隔可配置。
+// record   : 跳转同一个目标游戏 → 抓一张当前画面 → 回到 Swipt 供点选记录坐标。
+//            抓图前先销毁上一张，截图 10 分钟后由设置页/readRecording 自动删除。
+// listApps : 读取设备已安装应用，供设置页维护跳转白名单。
 //
 // 【架构要点，别再改回去】
 // internal/automation/engine.go: Host.execute() 每次执行 Action 都会 newEngine()
@@ -26,11 +27,11 @@ import {
   recordImageName,
   REF_H,
   REF_W,
+  targetBundle,
   writeRecording,
   type TapPoint,
 } from "./settings";
 
-const GAME_BUNDLE_ID = "com.tencent.nrc";
 /** Swipt 自身，抓取画面后跳回设置页用（官方 ownApps 正则里的前缀） */
 const SWIPT_BUNDLE_ID = "io.nekohasekai.swipt";
 /** 跳转后等待切换动画 */
@@ -100,7 +101,11 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function runTaps(signal: AbortSignal, report: Report): Promise<void> {
+async function runTaps(
+  signal: AbortSignal,
+  report: Report,
+  target: string,
+): Promise<void> {
   const settings = await readSettings();
   const active = settings.points.filter(
     (p) => p.enabled && p.x >= 0 && p.y >= 0,
@@ -130,15 +135,15 @@ async function runTaps(signal: AbortSignal, report: Report): Promise<void> {
       .catch(() => "");
     if (front !== "") {
       report.front = front;
-      if (front !== GAME_BUNDLE_ID) {
+      if (front !== target) {
         report.stopReason = `前台已切换为 ${front}`;
         return;
       }
     }
 
-    const target = active[index % active.length]!;
-    const point = pointOf(target, screen);
-    report.point = `${target.name} (${Math.round(point[0])}, ${Math.round(point[1])})`;
+    const pointItem = active[index % active.length]!;
+    const point = pointOf(pointItem, screen);
+    report.point = `${pointItem.name} (${Math.round(point[0])}, ${Math.round(point[1])})`;
     try {
       await input.tap(point, { signal });
       report.taps += 1;
@@ -158,24 +163,25 @@ async function runTaps(signal: AbortSignal, report: Report): Promise<void> {
   }
 }
 
-/** 前台变化即停止 */
+/** 前台变化即停止：以当前勾选的目标游戏为判断基准 */
 async function watchApps(
   signal: AbortSignal,
   stop: AbortController,
   graceUntil: number,
   report: Report,
+  target: string,
 ): Promise<void> {
   try {
     for await (const event of device.applicationEvents({ signal })) {
       if (signal.aborted || Date.now() < graceUntil) continue;
-      if (event.type === "background" && event.bundleId === GAME_BUNDLE_ID) {
-        report.stopReason = "游戏进入后台";
+      if (event.type === "background" && event.bundleId === target) {
+        report.stopReason = "目标游戏进入后台";
         stop.abort();
         return;
       }
       if (
         (event.type === "launch" || event.type === "foreground") &&
-        event.bundleId !== GAME_BUNDLE_ID
+        event.bundleId !== target
       ) {
         report.stopReason = `切换到 ${event.bundleId}`;
         stop.abort();
@@ -201,8 +207,9 @@ export default defineExtension({
       title: "开始自动投掷",
       description:
         "跳转到洛克王国并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止",
-      expose: ["shortcuts"],
+      // 不写 expose：不再注册到 iOS 快捷指令 / 轻点背面，只从插件设置页触发
       async run(_, { signal }) {
+        const target = targetBundle(await readSettings());
         const report: Report = {
           taps: 0,
           points: 0,
@@ -215,10 +222,10 @@ export default defineExtension({
         const stop = new AbortController();
         const loopSignal = AbortSignal.any([signal, stop.signal]);
         try {
-          await device.launchApplication(GAME_BUNDLE_ID, { signal });
+          await device.launchApplication(target, { signal });
         } catch (error) {
           report.lastError = `跳转失败：${messageOf(error)}`;
-          report.stopReason = "未能切换到游戏";
+          report.stopReason = `未能切换到 ${target}`;
           return report;
         }
         await sleep(LAUNCH_SETTLE_MS, loopSignal);
@@ -231,8 +238,9 @@ export default defineExtension({
           stop,
           Date.now() + GRACE_MS,
           report,
+          target,
         );
-        await runTaps(loopSignal, report);
+        await runTaps(loopSignal, report, target);
         stop.abort();
         await watcher.catch(() => {});
         if (signal.aborted) report.stopReason = "已被系统终止";
@@ -240,12 +248,14 @@ export default defineExtension({
       },
     }),
 
-    /** 坐标记录：抓一张游戏当前画面，回到设置页后在图上点选位置 */
+    /** 坐标记录：抓一张目标游戏当前画面，回到设置页后在图上点选位置 */
     record: defineAction({
       title: "坐标记录",
-      description: "跳转到洛克王国并抓取当前画面，返回设置页后点图记录坐标",
+      description:
+        "跳转到勾选的目标游戏并抓取当前画面，返回设置页后点图记录坐标",
       async run(_, { signal }) {
-        await device.launchApplication(GAME_BUNDLE_ID, { signal });
+        const target = targetBundle(await readSettings());
+        await device.launchApplication(target, { signal });
         await sleep(RECORD_DELAY_MS, signal);
         const shot = await device.screenshot({ signal });
         const image = shot.width < shot.height ? shot.rotate(90) : shot;
@@ -275,6 +285,19 @@ export default defineExtension({
           .launchApplication(SWIPT_BUNDLE_ID, { signal })
           .catch(() => {});
         return { width: image.width, height: image.height };
+      },
+    }),
+
+    /** 读取设备已安装应用，供设置页维护跳转目标白名单 */
+    listApps: defineAction({
+      title: "读取已安装应用",
+      description: "列出设备上已安装的应用，供设置页选择要跳转的游戏",
+      async run(_, { signal }) {
+        const apps = await device.installedApplications({ signal });
+        return apps.map((app) => ({
+          bundleId: app.bundleId,
+          name: app.name || app.bundleId,
+        }));
       },
     }),
   },
