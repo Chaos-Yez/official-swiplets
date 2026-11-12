@@ -319,12 +319,12 @@ export default defineExtension({
         await device.launchApplication(target, { signal });
         await sleep(RECORD_DELAY_MS, signal);
         const shot = await device.screenshot({ signal });
-        // 竖屏画面转 90° 统一成横屏，方便与横屏参考坐标对齐。
-        // 旋转后宽高必须对调写进记录，否则设置页会按旧比例把图片拉伸。
-        const rotated = shot.width < shot.height;
-        const image = rotated ? shot.rotate(90) : shot;
-        const width = rotated ? shot.height : image.width;
-        const height = rotated ? shot.width : image.height;
+        // 保持截图原始方向：横屏截图横屏显示，竖屏截图竖屏显示。
+        // 记录页点选时按原图宽高归一化，竖屏再顺时针 90° 映射回横屏参考坐标，
+        // 因此显示方向与点位坐标都和真机画面一致。
+        const image = shot;
+        const width = shot.width;
+        const height = shot.height;
         try {
           if (!(await dataDirectory.exists())) await dataDirectory.create();
         } catch {
