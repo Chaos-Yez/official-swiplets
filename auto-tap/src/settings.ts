@@ -4,14 +4,14 @@
 import { dataDirectory } from "@swipt/api/file-system";
 
 /** 插件版本（与 package.json 的 version 保持一致） */
-export const APP_VERSION = "0.6.0";
+export const APP_VERSION = "0.7.0";
 
 /** 参考截图分辨率（横屏） */
 export const REF_W = 2217;
 export const REF_H = 1024;
 export const MAX_POINTS = 8;
 export const MAX_GAMES = 8;
-/** 默认跳转目标：洛克王国 */
+/** 默认跳转目标（示例值；可在「目标对象」里换成任意已安装应用） */
 export const DEFAULT_BUNDLE_ID = "com.tencent.nrc";
 /** 默认点击随机偏移半径（参考截图像素） */
 export const DEFAULT_JITTER_PX = 10;
@@ -96,7 +96,7 @@ const recordFile = () => dataDirectory.file(RECORD_FILE);
 
 export function defaultGames(): Game[] {
   return [
-    { id: "roco", name: "洛克王国", bundleId: DEFAULT_BUNDLE_ID },
+    { id: "sample", name: "示例目标", bundleId: DEFAULT_BUNDLE_ID },
   ];
 }
 
@@ -111,7 +111,7 @@ export function defaultSettings(): Settings {
       { id: "p4", name: pointName(3), x: -1, y: -1, enabled: false },
     ],
     games: defaultGames(),
-    targetGameId: "roco",
+    targetGameId: "sample",
   };
 }
 

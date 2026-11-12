@@ -1,9 +1,9 @@
 {
   "name": "连点器",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "swiplet": {
-    "id": "roco-auto-tap",
+    "id": "auto-tap",
     "name": "连点器",
     "versionCode": 9,
     "icon": { "color": "orange", "symbol": "hand.tap.fill" },

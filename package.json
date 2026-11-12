@@ -8,7 +8,7 @@
     }
   },
   "workspaces": [
-    "roco-auto-tap"
+    "auto-tap"
   ],
   "scripts": {
     "build": "bun run --filter '*' build",

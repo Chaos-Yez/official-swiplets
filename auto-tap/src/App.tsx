@@ -508,7 +508,7 @@ export default function App() {
               <NavigationLink value="targets">
                 <LabeledContent label="目标对象">
                   <Text modifiers={caption}>
-                    {targetGame?.name ?? "洛克王国"} · {currentBundle}
+                    {targetGame?.name ?? "示例目标"} · {currentBundle}
                   </Text>
                 </LabeledContent>
               </NavigationLink>
@@ -727,7 +727,7 @@ export default function App() {
                     <Image uiImage={targetIcon} modifiers={appIcon} />
                   )}
                   <VStack alignment="leading" spacing={2}>
-                    <Text>{targetGame?.name ?? "洛克王国"}</Text>
+                    <Text>{targetGame?.name ?? "示例目标"}</Text>
                     <Text modifiers={caption}>{currentBundle}</Text>
                   </VStack>
                   <Spacer />
