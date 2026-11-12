@@ -494,7 +494,11 @@ export default function App() {
             {/* 最上方：居中、放大的主按钮 */}
             <Section
               footer={
-                <Text modifiers={caption}>{detail}</Text>
+                <Text modifiers={caption}>
+                  {detail === ""
+                    ? "点「开始连点」后约 3 秒开始自动连点。\n切回 Swipt、切到其他应用、锁屏或熄屏都会自动停止。"
+                    : detail}
+                </Text>
               }
             >
               <HStack modifiers={[frame({ maxWidth: Infinity })]}>
@@ -512,25 +516,6 @@ export default function App() {
                 />
                 <Spacer />
               </HStack>
-            </Section>
-
-            {/* 使用说明：整齐列在「开始连点」下方 */}
-            <Section title="使用说明">
-              <VStack alignment="leading" spacing={6}>
-                <Text modifiers={caption}>
-                  1. 使用前先在「设置 · 目标对象」里选择要连点的应用。
-                </Text>
-                <Text modifiers={caption}>
-                  2. 点「开始连点」后会先跳转到目标应用，约 3 秒后开始自动连点。
-                </Text>
-                <Text modifiers={caption}>
-                  3. 出现以下情况会自动停止（需重新点击开始）：
-                </Text>
-                <Text modifiers={caption}>　· 切回 Swipt 或切换到其他应用</Text>
-                <Text modifiers={caption}>　· 目标应用被切到后台</Text>
-                <Text modifiers={caption}>　· 设备锁屏或屏幕熄灭</Text>
-                <Text modifiers={caption}>　· 连续点击失败（如界面变化导致点不到）</Text>
-              </VStack>
             </Section>
 
             {/* 四个入口：点进去才展开各自的设置项 */}
