@@ -172,7 +172,7 @@ export default function App() {
       setRecording(null);
       setCoordX("");
       setCoordY("");
-      setDetail("截图已过期，已自动销毁。需要时重新点「坐标记录」。");
+      setDetail("截图已过期，已自动销毁。需要时重新点「获取坐标」。");
     }, remain);
     return () => clearTimeout(timer);
   }, [recording?.time]);
@@ -533,7 +533,7 @@ export default function App() {
                 </LabeledContent>
               </NavigationLink>
               <NavigationLink value="record">
-                <LabeledContent label="坐标记录">
+                <LabeledContent label="获取坐标">
                   <Text modifiers={caption}>
                     {recording === null
                       ? "尚未记录画面"
@@ -638,7 +638,7 @@ export default function App() {
 
         {/* ============ 坐标记录子页面 ============ */}
         <NavigationDestination value="record">
-          <Toolbar modifiers={[navigationTitle("坐标记录")]}>
+          <Toolbar modifiers={[navigationTitle("获取坐标")]}>
             <List>
               <Section
                 footer={
@@ -744,7 +744,7 @@ export default function App() {
                 title="当前目标对象"
                 footer={
                   <Text modifiers={caption}>
-                    勾选后，「开始连点」和「坐标记录」都会跳转到它，自动停止的判断也以它为准。
+                    勾选后，「开始连点」和「获取坐标」都会跳转到它，自动停止的判断也以它为准。
                   </Text>
                 }
               >
