@@ -31,6 +31,7 @@ import {
   font,
   foregroundStyle,
   frame,
+  labelStyle,
   navigationTitle,
   onAppear,
   resizable,
@@ -456,16 +457,8 @@ export default function App() {
         {/* ============ 主页面 ============ */}
         <Toolbar modifiers={[navigationTitle("连点器"), onAppear(loadApps)]}>
           <List>
-            {/* 最上方：居中、放大的主按钮 */}
-            <Section
-              footer={
-                <Text modifiers={caption}>
-                  点「开始连点」后约 3 秒开始自动连点。{"\n"}
-                  切回 Swipt、切到其他应用、锁屏或熄屏都会自动停止。
-                </Text>
-              }
-            >
-              {/* 开始连点上方：当前目标的应用图标与名称，仅展示、不可点击 */}
+            {/* 页面最上方：当前目标的应用图标与名称，仅展示、不可点击，独立于下方按钮卡片 */}
+            <Section>
               <HStack spacing={10} modifiers={[frame({ maxWidth: Infinity })]}>
                 <Spacer />
                 {targetIcon !== "" && (
@@ -474,6 +467,17 @@ export default function App() {
                 <Text>{targetDisplayName}</Text>
                 <Spacer />
               </HStack>
+            </Section>
+
+            {/* 开始连点：居中、放大的主按钮 */}
+            <Section
+              footer={
+                <Text modifiers={caption}>
+                  点「开始连点」后约 3 秒开始自动连点。{"\n"}
+                  切回 Swipt、切到其他应用、锁屏或熄屏都会自动停止。
+                </Text>
+              }
+            >
               <HStack modifiers={[frame({ maxWidth: Infinity })]}>
                 <Spacer />
                 <Button
@@ -515,6 +519,19 @@ export default function App() {
 
             {/* 点击位置：勾选启用 + 拖拽排序 */}
             <Section
+              header={
+                // 官方「切换 App Store 账号」的写法：header 内 HStack + Spacer + iconOnly 按钮
+                <HStack>
+                  <Text>点击位置</Text>
+                  <Spacer />
+                  <Button
+                    label="添加点位"
+                    systemImage="plus"
+                    onPress={addPoint}
+                    modifiers={[labelStyle("iconOnly")]}
+                  />
+                </HStack>
+              }
               footer={
                 <Text modifiers={caption}>
                   默认只有点位一启用。勾选其它点位即参与点击，按这里的顺序依次执行；未设置坐标的点位会自动跳过。{"\n"}
@@ -522,24 +539,6 @@ export default function App() {
                 </Text>
               }
             >
-              {/* 标题行：左「点击位置」，最右边一个蓝色加号用于新增点位 */}
-              <HStack modifiers={[frame({ maxWidth: Infinity })]}>
-                <Text
-                  modifiers={[
-                    font({ textStyle: "footnote", weight: "semibold" }),
-                    foregroundStyle({ type: "hierarchical", style: "secondary" }),
-                  ]}
-                >
-                  点击位置
-                </Text>
-                <Spacer />
-                <Button
-                  label=""
-                  systemImage="plus"
-                  onPress={addPoint}
-                  modifiers={[tint("blue"), controlSize("small")]}
-                />
-              </HStack>
               {settings !== null && (
                 <List.ForEach
                   data={settings.points}
