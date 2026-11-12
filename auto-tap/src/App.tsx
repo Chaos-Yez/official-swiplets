@@ -299,6 +299,7 @@ export default function App() {
         x,
         y,
         enabled: false,
+        intervalMs: 1000,
       });
     } else {
       points[targetIndex] = { ...points[targetIndex]!, x, y };
@@ -351,6 +352,7 @@ export default function App() {
           x: -1,
           y: -1,
           enabled: false,
+          intervalMs: 1000,
         },
       ],
     });
