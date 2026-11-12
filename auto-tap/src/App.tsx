@@ -32,6 +32,7 @@ import {
   foregroundStyle,
   frame,
   labelStyle,
+  navigationBarTitleDisplayMode,
   navigationTitle,
   onAppear,
   resizable,
@@ -462,7 +463,14 @@ export default function App() {
     <Host style={{ flex: 1 }}>
       <NavigationStack>
         {/* ============ 主页面 ============ */}
-        <Toolbar modifiers={[navigationTitle("连点器"), onAppear(loadApps)]}>
+        <Toolbar
+          modifiers={[
+            navigationTitle("连点器"),
+            // inline 显示模式：标题在导航栏里居中（大标题模式只能左对齐）
+            navigationBarTitleDisplayMode("inline"),
+            onAppear(loadApps),
+          ]}
+        >
           <List>
             {/* 开始连点：居中、放大的主按钮，图标直接用当前目标的应用图标 */}
             <Section
@@ -640,7 +648,7 @@ export default function App() {
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
-                      ? "1. 点「获取界面布局」会跳转到目标对象，约 2 秒后自动抓取画面并返回。\n2. 在画面上点一下即标记该位置。\n3. 选好要保存的点位后点「保存为点位」，最多 8 个。\n4. 再次抓取会覆盖上一张；截图 10 分钟后自动销毁。"
+                      ? "1. 点「获取界面布局截图」会跳转到目标对象，约 2 秒后自动抓取画面并返回。\n2. 在画面上点一下即标记该位置。\n3. 选好要保存的点位后点「保存到点位」，最多 8 个。\n4. 再次抓取会覆盖上一张；截图 10 分钟后自动销毁。"
                       : detail}
                   </Text>
                 }
@@ -648,7 +656,7 @@ export default function App() {
                 <HStack modifiers={[frame({ maxWidth: Infinity })]}>
                   <Spacer />
                   <Button
-                    label={recordingBusy ? "正在获取…" : "获取界面布局"}
+                    label={recordingBusy ? "正在获取…" : "获取界面布局截图"}
                     onPress={capture}
                     modifiers={[buttonStyle("bordered"), tint("orange")]}
                   />
@@ -681,9 +689,9 @@ export default function App() {
                 </Section>
               )}
 
-              {/* 记录坐标 / 坐标输入 / 保存：独立 Section，保证各行分隔线完整 */}
+              {/* 获取的坐标 / 保存：独立 Section，保证各行分隔线完整 */}
               <Section>
-                <LabeledContent label="记录的坐标">
+                <LabeledContent label="获取的坐标">
                   <Text
                     modifiers={[
                       textSelection(true),
@@ -695,20 +703,6 @@ export default function App() {
                       : `${coordX}, ${coordY}`}
                   </Text>
                 </LabeledContent>
-                <TextField
-                  placeholder={
-                    coordX === "" ? "X 坐标" : `X 坐标（当前 ${coordX}）`
-                  }
-                  onTextChange={setCoordX}
-                  modifiers={[]}
-                />
-                <TextField
-                  placeholder={
-                    coordY === "" ? "Y 坐标" : `Y 坐标（当前 ${coordY}）`
-                  }
-                  onTextChange={setCoordY}
-                  modifiers={[]}
-                />
                 {settings !== null && (
                   <Picker<number>
                     label="保存到"
@@ -728,8 +722,7 @@ export default function App() {
                 <HStack modifiers={[frame({ maxWidth: Infinity })]}>
                   <Spacer />
                   <Button
-                    label="保存为点位"
-                    systemImage="square.and.arrow.down"
+                    label="保存到点位"
                     onPress={applyCoordinate}
                   />
                   <Spacer />
