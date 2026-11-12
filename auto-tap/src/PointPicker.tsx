@@ -7,14 +7,7 @@
 //   · 横屏截图：顺时针转 90° 后同样是竖屏，铺满同一个显示区域。
 // 触摸坐标为「截图原始方向」的归一化坐标：横屏图显示时已转动，所以这里按
 // 显示方向反算回去（nx = v、ny = 1 - u），保证记录的坐标与真机点击位置一致。
-import { useRef } from "react";
-import {
-  Image,
-  PanResponder,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 /** 显示区域上限：尽量铺满，不再额外缩小 */
 const MAX_WIDTH = 330;
@@ -64,46 +57,25 @@ export function PointPicker({
   const cx = (landscape ? 1 - my : mx) * displayWidth;
   const cy = (landscape ? mx : my) * displayHeight;
 
-  // 触摸与拖动统一走 PanResponder：按下即定位到触点，按住拖动则按位移实时精确定位。
-  // 用 ref 保存最新回调与显示尺寸，避免拖动途中因重渲染重建手势导致中断。
-  const onPickRef = useRef(onPick);
-  onPickRef.current = onPick;
-  const sizeRef = useRef({ w: displayWidth, h: displayHeight, rot: landscape });
-  sizeRef.current = { w: displayWidth, h: displayHeight, rot: landscape };
-  const startRef = useRef({ x: 0, y: 0 });
+  // 只保留「点一下标记」：按下手指即记录本次位置，不再支持拖动红点微调。
   const pickAt = (x: number, y: number) => {
-    const { w, h, rot } = sizeRef.current;
-    const u = clamp01(x / w);
-    const v = clamp01(y / h);
+    const u = clamp01(x / displayWidth);
+    const v = clamp01(y / displayHeight);
     // 竖屏图：显示方向就是原始方向；横屏图（顺时针转过 90°）要转回来
-    onPickRef.current(rot ? v : u, rot ? 1 - u : v);
+    onPick(landscape ? v : u, landscape ? 1 - u : v);
   };
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (event) => {
-        const { locationX, locationY } = event.nativeEvent;
-        startRef.current = { x: locationX, y: locationY };
-        pickAt(locationX, locationY);
-      },
-      onPanResponderMove: (_event, gesture) => {
-        pickAt(
-          startRef.current.x + gesture.dx,
-          startRef.current.y + gesture.dy,
-        );
-      },
-    }),
-  ).current;
 
   return (
-    <View
+    <Pressable
       style={{
         width: displayWidth,
         height: displayHeight,
         backgroundColor: "#1C1C1E",
       }}
-      {...panResponder.panHandlers}
+      onPress={(event) => {
+        const { locationX, locationY } = event.nativeEvent;
+        pickAt(locationX, locationY);
+      }}
     >
       {landscape ? (
         // 横屏图顺时针转 90°：容器按转动后的尺寸居中摆放，旋转绕自身中心
@@ -158,7 +130,7 @@ export function PointPicker({
           )}
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 

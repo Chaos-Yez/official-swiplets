@@ -67,21 +67,22 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * 屏幕尺寸必须按「当前真实方向」取用：竖屏就竖着算、横屏才横着算。
- * 早期版本无条件转成横屏，横屏游戏没问题，但竖屏 App 里点击坐标会整体
- * 偏移（宽高被对调），记录下来的点位自然点不准。
+ * 屏幕尺寸 = input.tap 的坐标系，必须原样使用 device.info().screen 的宽高。
+ *
+ * 【别改回去，这是横屏点不准的根因】
+ * Swipt 底层 internal/device/connection.go 里 screenGeometry 的 Width/Height
+ * 直接取自 display info 的当前宽高，screen.go 的 touchTurns 会自己把这份
+ * 坐标转成设备坐标。所以这里一旦按 orientation 自己判断横竖、把宽高对调，
+ * 就会和底层重复旋转，横屏点位整体偏移。
+ * 早期版本无条件转横屏、后来改成判断 orientation（值可能是 rot90/rot270，
+ * 判断落空）都踩过这个坑。现在原样使用，任何方向都不需要自己换算。
  */
-function orientScreen(raw: {
+function screenOf(raw: {
   width: number;
   height: number;
   orientation: string;
 }): ScreenSize {
-  const min = Math.min(raw.width, raw.height);
-  const max = Math.max(raw.width, raw.height);
-  // 只有明确横屏才对调；portrait / portraitUpsideDown / 未知一律按竖屏
-  return raw.orientation === "landscape"
-    ? { width: max, height: min }
-    : { width: min, height: max };
+  return { width: raw.width, height: raw.height };
 }
 
 /** 参考截图坐标 -> 当前屏幕坐标，并加上可配置的随机偏移 */
@@ -130,7 +131,7 @@ async function runTaps(
   try {
     const info = await device.info({ signal });
     report.screen = `${info.screen.width}×${info.screen.height} ${info.screen.orientation} scale=${info.screen.scale}`;
-    screen = orientScreen(info.screen);
+    screen = screenOf(info.screen);
   } catch (error) {
     report.lastError = `读取屏幕失败：${messageOf(error)}`;
     report.stopReason = "无法获取屏幕尺寸";
