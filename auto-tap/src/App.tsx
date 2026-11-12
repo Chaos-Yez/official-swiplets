@@ -260,13 +260,11 @@ export default function App() {
 
   /** 在游戏画面截图上点选位置 */
   const pick = (nx: number, ny: number) => {
-    // 截图保持原方向：横屏直接映射；竖屏按顺时针 90° 映射回横屏参考坐标，
-    // 保证竖屏截图竖屏显示时，记录的坐标仍与真机横屏点击位置一致。
-    const shotW = recording?.width ?? REF_W;
-    const shotH = recording?.height ?? REF_H;
-    const portrait = shotW < shotH;
-    const x = Math.round((portrait ? 1 - ny : nx) * REF_W);
-    const y = Math.round((portrait ? nx : ny) * REF_H);
+    // 回调里的 nx / ny 已经是「截图原始方向」的归一化坐标（横屏图被转成竖屏
+    // 显示时，PointPicker 内部已经反算回来了），所以这里直接线性映射到参考
+    // 坐标即可，任何方向都不需要额外旋转，点哪就是哪。
+    const x = Math.round(nx * REF_W);
+    const y = Math.round(ny * REF_H);
     setCoordX(String(x));
     setCoordY(String(y));
     const next: Recording = {
@@ -662,21 +660,25 @@ export default function App() {
                   <Spacer />
                 </HStack>
                 {recording !== null && shotSize !== null && (
-                  <RNHostView matchContents>
-                    <PointPicker
-                      key={recording.time}
-                      uri={recordImageFile(recording.image).uri}
-                      width={shotSize.width}
-                      height={shotSize.height}
-                      marker={marker}
-                      label={
-                        coordX === "" || coordY === ""
-                          ? ""
-                          : `${coordX}, ${coordY}`
-                      }
-                      onPick={pick}
-                    />
-                  </RNHostView>
+                  <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                    <Spacer />
+                    <RNHostView matchContents>
+                      <PointPicker
+                        key={recording.time}
+                        uri={recordImageFile(recording.image).uri}
+                        width={shotSize.width}
+                        height={shotSize.height}
+                        marker={marker}
+                        label={
+                          coordX === "" || coordY === ""
+                            ? ""
+                            : `${coordX}, ${coordY}`
+                        }
+                        onPick={pick}
+                      />
+                    </RNHostView>
+                    <Spacer />
+                  </HStack>
                 )}
                 <LabeledContent label="记录的坐标">
                   <Text

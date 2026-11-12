@@ -66,14 +66,22 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * 屏幕尺寸必须按「当前真实方向」取用：竖屏就竖着算、横屏才横着算。
+ * 早期版本无条件转成横屏，横屏游戏没问题，但竖屏 App 里点击坐标会整体
+ * 偏移（宽高被对调），记录下来的点位自然点不准。
+ */
 function orientScreen(raw: {
   width: number;
   height: number;
   orientation: string;
 }): ScreenSize {
-  return raw.width < raw.height
-    ? { width: raw.height, height: raw.width }
-    : { width: raw.width, height: raw.height };
+  const min = Math.min(raw.width, raw.height);
+  const max = Math.max(raw.width, raw.height);
+  // 只有明确横屏才对调；portrait / portraitUpsideDown / 未知一律按竖屏
+  return raw.orientation === "landscape"
+    ? { width: max, height: min }
+    : { width: min, height: max };
 }
 
 /** 参考截图坐标 -> 当前屏幕坐标，并加上可配置的随机偏移 */
@@ -319,9 +327,10 @@ export default defineExtension({
         await device.launchApplication(target, { signal });
         await sleep(RECORD_DELAY_MS, signal);
         const shot = await device.screenshot({ signal });
-        // 保持截图原始方向：横屏截图横屏显示，竖屏截图竖屏显示。
-        // 记录页点选时按原图宽高归一化，竖屏再顺时针 90° 映射回横屏参考坐标，
-        // 因此显示方向与点位坐标都和真机画面一致。
+        // 保持截图原始方向，宽高用真实像素值记录。
+        // 点选时按原图归一化后直接映射到参考坐标（x = nx·REF_W，y = ny·REF_H），
+        // 不做任何旋转换算；显示方向由设置页负责（横屏图也会转成竖屏显示），
+        // 这样记录坐标与真机点击位置永远一致。
         const image = shot;
         const width = shot.width;
         const height = shot.height;
