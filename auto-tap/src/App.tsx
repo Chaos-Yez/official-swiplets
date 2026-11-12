@@ -2,7 +2,6 @@
 // 「获取坐标」「目标对象」「点击偏移」各自再进一层子页面。
 // 配置直接读写 dataDirectory，与 Action 引擎共享。
 import {
-  Alert,
   Button,
   Form,
   HStack,
@@ -141,8 +140,6 @@ export default function App() {
   const [shotSize, setShotSize] = useState<ImageSize | null>(null);
   const [coordX, setCoordX] = useState("");
   const [coordY, setCoordY] = useState("");
-  /** 保存到点位后的成功提示；null 表示不显示 */
-  const [savedAlert, setSavedAlert] = useState<string | null>(null);
   const [targetIndex, setTargetIndex] = useState(0);
   const [customJitter, setCustomJitter] = useState("");
   const [detail, setDetail] = useState("");
@@ -327,9 +324,8 @@ export default function App() {
     const savedName = isNew
       ? points[points.length - 1]!.name
       : points[targetIndex]!.name;
-    setDetail(`坐标 (${x}, ${y}) 已保存，勾选启用后即会参与点击。`);
-    // 成功提示框
-    setSavedAlert(`已保存到「${savedName}」\n坐标 (${x}, ${y})`);
+    // 保存成功：用气泡下方的文字提示
+    setDetail(`已保存到「${savedName}」：坐标 (${x}, ${y})。勾选启用后即会参与点击。`);
   };
 
   /** 点击偏移子页：应用自定义像素 */
@@ -645,16 +641,7 @@ export default function App() {
         {/* ============ 坐标记录子页面 ============ */}
         <NavigationDestination value="record">
           <Toolbar modifiers={[navigationTitle("获取坐标")]}>
-            {/* 保存到点位成功后弹窗提示（Alert 需挂在被它修饰的视图上） */}
-            <Alert
-              title={savedAlert ?? ""}
-              isPresented={savedAlert !== null}
-              onIsPresentedChange={(presented) => {
-                if (!presented) setSavedAlert(null);
-              }}
-            >
-              <Alert.Trigger>
-                <List>
+            <List>
               {/* 第一行：目标对象。标题在卡片外上方，行内左侧（左对齐）放大显示图标与名称 */}
               <Section header={<Text>目标对象</Text>}>
                 <NavigationLink value="targets">
@@ -763,12 +750,7 @@ export default function App() {
                   <Spacer />
                 </HStack>
               </Section>
-                </List>
-              </Alert.Trigger>
-              <Alert.Actions>
-                <Button label="好" onPress={() => {}} />
-              </Alert.Actions>
-            </Alert>
+            </List>
           </Toolbar>
         </NavigationDestination>
 
