@@ -4,7 +4,7 @@
 import { dataDirectory } from "@swipt/api/file-system";
 
 /** 插件版本（与 package.json 的 version 保持一致） */
-export const APP_VERSION = "0.1";
+export const APP_VERSION = "0.1.0";
 
 /** 参考截图分辨率（横屏） */
 export const REF_W = 2217;
