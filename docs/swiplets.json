@@ -5,10 +5,10 @@
   },
   "swiplets": [
     {
-      "id": "roco-auto-tap",
+      "id": "auto-tap",
       "name": "连点器",
-      "version": "0.6.0-nightly",
-      "versionCode": 13,
+      "version": "0.7.0-nightly",
+      "versionCode": 14,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -33,9 +33,9 @@
           "description": "列出设备上已安装的应用与图标，供设置页选择目标对象"
         }
       ],
-      "url": "roco-auto-tap.swiplet",
-      "size": 21502,
-      "sha256": "9340f581961d6fcdcf73fca7187397fe5d18e2f84044b23092886e6d5b329561"
+      "url": "auto-tap.swiplet",
+      "size": 21495,
+      "sha256": "31115ee10eb27eaeebfe31626c23b421b027a15ac92985e71226b2519874b4a0"
     }
   ]
 }
