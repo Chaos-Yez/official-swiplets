@@ -140,6 +140,8 @@ export default function App() {
   const [shotSize, setShotSize] = useState<ImageSize | null>(null);
   const [coordX, setCoordX] = useState("");
   const [coordY, setCoordY] = useState("");
+  /** 保存到点位后的成功提示，显示在「保存到点位」按钮下方（截图会挡住上方文字） */
+  const [savedTip, setSavedTip] = useState("");
   const [targetIndex, setTargetIndex] = useState(0);
   const [customJitter, setCustomJitter] = useState("");
   const [detail, setDetail] = useState("");
@@ -243,6 +245,7 @@ export default function App() {
   const capture = () => {
     if (recordingBusy) return;
     setRecordingBusy(true);
+    setSavedTip("");
     setDetail("正在跳转勾选的目标对象，2 秒后抓取当前画面并回到本页…");
     record().then(
       async (shot) => {
@@ -284,6 +287,8 @@ export default function App() {
     setDetail(
       `已标记坐标 (${x}, ${y})：画面上会出现红色标记，长按坐标文字可复制，也可直接修改 X / Y。`,
     );
+    // 重新标记后，上一次的「保存成功」提示不再有效
+    setSavedTip("");
   };
 
   /** 把当前 X/Y 保存到选中的点位（或新增一个点位） */
@@ -300,6 +305,7 @@ export default function App() {
       y > REF_H
     ) {
       setDetail(`请输入有效坐标：X 0~${REF_W}，Y 0~${REF_H}`);
+      setSavedTip("");
       return;
     }
     const points = [...settings.points];
@@ -307,6 +313,7 @@ export default function App() {
     if (isNew) {
       if (points.length >= MAX_POINTS) {
         setDetail(`最多 ${MAX_POINTS} 个点位`);
+        setSavedTip("");
         return;
       }
       points.push({
@@ -324,8 +331,11 @@ export default function App() {
     const savedName = isNew
       ? points[points.length - 1]!.name
       : points[targetIndex]!.name;
-    // 保存成功：用气泡下方的文字提示
-    setDetail(`已保存到「${savedName}」：坐标 (${x}, ${y})。勾选启用后即会参与点击。`);
+    // 保存成功：提示显示在「保存到点位」按钮下方，避免被截图遮住
+    setDetail("");
+    setSavedTip(
+      `已保存到「${savedName}」：坐标 (${x}, ${y})。勾选启用后即会参与点击。`,
+    );
   };
 
   /** 点击偏移子页：应用自定义像素 */
@@ -712,7 +722,13 @@ export default function App() {
               )}
 
               {/* 获取的坐标 / 保存：独立 Section，保证各行分隔线完整 */}
-              <Section>
+              <Section
+                footer={
+                  savedTip === "" ? undefined : (
+                    <Text modifiers={caption}>{savedTip}</Text>
+                  )
+                }
+              >
                 <LabeledContent label="获取的坐标">
                   <Text
                     modifiers={[
