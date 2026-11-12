@@ -1,4 +1,4 @@
-name: Build
+name: 构建
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: Release the current nightly as a stable version
+        description: 把当前测试版发布为正式版
         type: boolean
         default: false
 
@@ -17,29 +17,29 @@ concurrency:
 
 jobs:
   build:
-    name: Build
+    name: 构建
     if: ${{ !inputs.release }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
+      - name: 拉取代码
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           fetch-depth: 0
-      - name: Setup Node
+      - name: 安装 Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Setup Bun
+      - name: 安装 Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
-      - name: Install
+      - name: 安装依赖
         run: bun install
-      - name: Check
+      - name: 类型检查
         run: bun run check
-      - name: Set versions
+      - name: 设置版本号
         id: version
         run: |-
           source .github/github.sh
@@ -67,17 +67,17 @@ jobs:
           done
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Build
+      - name: 构建
         run: |-
           bun run build
           node_modules/.bin/swipt project source
-      - name: Upload build
+      - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: swiplets
           path: dist
           if-no-files-found: error
-      - name: Publish
+      - name: 发布测试版
         if: github.ref == 'refs/heads/main'
         run: |-
           source .github/github.sh
@@ -97,26 +97,26 @@ jobs:
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
           GH_TOKEN: ${{ github.token }}
   release:
-    name: Release
+    name: 发布
     if: inputs.release && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
+      - name: 拉取代码
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           ref: nightly
           fetch-depth: 0
-      - name: Setup Node
+      - name: 安装 Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Setup Bun
+      - name: 安装 Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
-      - name: Set versions
+      - name: 设置版本号
         id: version
         run: |-
           source .github/github.sh
@@ -151,13 +151,13 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Install
+      - name: 安装依赖
         run: bun install
-      - name: Build
+      - name: 构建
         run: |-
           bun run build
           node_modules/.bin/swipt project source
-      - name: Release
+      - name: 发布
         run: |-
           source .github/github.sh
           LEVEL=$(npm view @swipt/api@latest apiLevel)

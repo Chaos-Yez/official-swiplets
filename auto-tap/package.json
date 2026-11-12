@@ -1,6 +1,6 @@
 {
   "name": "连点器",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "swiplet": {
     "id": "auto-tap",
@@ -9,10 +9,6 @@
     "icon": { "color": "orange", "symbol": "hand.tap.fill" },
     "app": "./src/App.tsx",
     "extension": "./src/extension.ts"
-  },
-  "source": {
-    "name": "My Swiplets",
-    "localizedNames": { "zh-Hans": "我的插件" }
   },
   "scripts": {
     "build": "swipt project build",
