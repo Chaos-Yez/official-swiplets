@@ -480,7 +480,7 @@ export default function App() {
               footer={
                 <Text modifiers={caption}>
                   {detail === ""
-                    ? "点「开始连点」会跳转勾选的目标对象，按下方已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止。"
+                    ? "点「开始连点」会跳转勾选的目标对象，按下方已启用点位的顺序循环点击；切回 Swipt、切应用或锁屏自动停止。"
                     : detail}
                 </Text>
               }

@@ -4,8 +4,10 @@
 // record   : 跳转同一个目标对象 → 抓一张当前画面 → 回到 Swipt 供点选记录坐标。
 //            抓图前先销毁上一张，过期截图由设置页 / readRecording 自动清理。
 // listApps : 读取设备已安装应用，供设置页维护跳转白名单。
-// 自动停止由 watchStop() 五路并行监控：应用事件 / 前台 / 锁屏 / 屏幕状态 /
-// 系统面板（控制中心、通知中心），任一命中立刻 abort 连点循环。
+// 自动停止由 watchStop() 四路并行监控：应用事件 / 前台 / 锁屏 / 屏幕状态，
+// 任一命中立刻 abort 连点循环。
+// 注意：iOS 下拉控制中心不改变前台身份，也没有可靠事件，故不再尝试检测；
+// 要停止请切回 Swipt / 切到别的应用 / 锁屏。
 //
 // 【架构要点，别再改回去】
 // internal/automation/engine.go: Host.execute() 每次执行 Action 都会 newEngine()
@@ -18,7 +20,6 @@
 // ---------------------------------------------------------------------------
 
 import type { Point } from "@swipt/api";
-import * as accessibility from "@swipt/api/accessibility";
 import * as device from "@swipt/api/device";
 import { dataDirectory } from "@swipt/api/file-system";
 import * as input from "@swipt/api/input";
@@ -43,8 +44,6 @@ const LAUNCH_SETTLE_MS = 1200;
 const RECORD_DELAY_MS = 3000;
 /** 启动后的事件宽限期，避免切换动画里的系统 UI 事件误停 */
 const GRACE_MS = 800;
-/** 系统面板（控制中心/通知中心）轮询间隔 */
-const OVERLAY_POLL_MS = 400;
 /** 连续点击失败多少次后退出 */
 const MAX_FAILURES = 3;
 
@@ -167,10 +166,11 @@ async function runTaps(
 }
 
 /**
- * 停止监控。Swipt 源码 foreground.go 明确记录：下拉控制中心时游戏仍持有
- * foregroundRunning，前台身份与应用事件都不会变化，所以只靠前台判断漏掉
- * 了这种情况。这里并行监听应用事件、前台、锁屏、屏幕状态四路，再用无障碍
- * 快照检测盖在游戏上方的系统面板（控制中心 / 通知中心）。
+ * 停止监控：并行监听应用事件、前台、锁屏、屏幕状态四路，任一命中立即 abort。
+ * Swipt 源码 foreground.go 明确记录：下拉控制中心时游戏仍持有前台身份，
+ * 应用事件与前台订阅都不会变化。code=12 曾尝试用无障碍快照检测系统面板，
+ * 真机下拉控制中心仍不触发，已移除该路检测。控制中心不再作为停止方式，
+ * 可靠的停止方式是切回 Swipt / 切到别的应用 / 锁屏。
  */
 async function watchStop(
   signal: AbortSignal,
@@ -251,30 +251,7 @@ async function watchStop(
     }
   })();
 
-  // 控制中心 / 通知中心：游戏仍是前台，但 SpringBoard 会把自己的控制面板
-  // 盖在游戏上方。fullScreen 快照的 system 子树里会出现成组的 toggle 控件。
-  const overlay = (async () => {
-    while (!signal.aborted) {
-      await sleep(OVERLAY_POLL_MS, signal);
-      if (!ready()) continue;
-      try {
-        const snap = await accessibility.snapshot({
-          scope: "fullScreen",
-          depth: 5,
-          signal,
-        });
-        const toggles = snap.system?.findAll({ role: "toggle" }) ?? [];
-        if (toggles.length >= 2) {
-          halt("检测到系统面板（控制中心 / 通知中心）");
-          return;
-        }
-      } catch {
-        // 没有辅助功能权限或读取失败：忽略，不误停也不中断点击
-      }
-    }
-  })();
-
-  await Promise.all([appEvents, foreground, lockState, display, overlay]);
+  await Promise.all([appEvents, foreground, lockState, display]);
 }
 
 export default defineExtension({
@@ -290,7 +267,7 @@ export default defineExtension({
     start: defineAction({
       title: "开始自动投掷",
       description:
-        "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或拉下控制中心自动停止",
+        "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或锁屏自动停止",
       // 不写 expose：不再注册到 iOS 快捷指令 / 轻点背面，只从插件设置页触发
       async run(_, { signal }) {
         const target = targetBundle(await readSettings());
