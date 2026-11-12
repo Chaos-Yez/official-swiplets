@@ -1,7 +1,7 @@
 // 连点器 (Swiplet)
 // ---------------------------------------------------------------------------
-// start    : 跳转到「勾选的目标游戏」→ 按已启用点位的顺序循环点击，间隔可配置。
-// record   : 跳转同一个目标游戏 → 抓一张当前画面 → 回到 Swipt 供点选记录坐标。
+// start    : 跳转到「勾选的目标对象」→ 按已启用点位的顺序循环点击，间隔可配置。
+// record   : 跳转同一个目标对象 → 抓一张当前画面 → 回到 Swipt 供点选记录坐标。
 //            抓图前先销毁上一张，截图 10 分钟后由设置页/readRecording 自动删除。
 // listApps : 读取设备已安装应用，供设置页维护跳转白名单。
 //
@@ -163,7 +163,7 @@ async function runTaps(
   }
 }
 
-/** 前台变化即停止：以当前勾选的目标游戏为判断基准 */
+/** 前台变化即停止：以当前勾选的目标对象为判断基准 */
 async function watchApps(
   signal: AbortSignal,
   stop: AbortController,
@@ -175,7 +175,7 @@ async function watchApps(
     for await (const event of device.applicationEvents({ signal })) {
       if (signal.aborted || Date.now() < graceUntil) continue;
       if (event.type === "background" && event.bundleId === target) {
-        report.stopReason = "目标游戏进入后台";
+        report.stopReason = "目标对象进入后台";
         stop.abort();
         return;
       }
@@ -248,11 +248,11 @@ export default defineExtension({
       },
     }),
 
-    /** 坐标记录：抓一张目标游戏当前画面，回到设置页后在图上点选位置 */
+    /** 坐标记录：抓一张目标对象当前画面，回到设置页后在图上点选位置 */
     record: defineAction({
       title: "坐标记录",
       description:
-        "跳转到勾选的目标游戏并抓取当前画面，返回设置页后点图记录坐标",
+        "跳转到勾选的目标对象并抓取当前画面，返回设置页后点图记录坐标",
       async run(_, { signal }) {
         const target = targetBundle(await readSettings());
         await device.launchApplication(target, { signal });
