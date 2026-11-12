@@ -659,7 +659,11 @@ export default function App() {
                   />
                   <Spacer />
                 </HStack>
-                {recording !== null && shotSize !== null && (
+              </Section>
+
+              {/* 截图单独成 Section：RNHostView 自定义行会把系统分隔线打断，拆出来即可恢复完整 */}
+              {recording !== null && shotSize !== null && (
+                <Section>
                   <HStack modifiers={[frame({ maxWidth: Infinity })]}>
                     <Spacer />
                     <RNHostView matchContents>
@@ -679,7 +683,11 @@ export default function App() {
                     </RNHostView>
                     <Spacer />
                   </HStack>
-                )}
+                </Section>
+              )}
+
+              {/* 记录坐标 / 坐标输入 / 保存：独立 Section，保证各行分隔线完整 */}
+              <Section>
                 <LabeledContent label="记录的坐标">
                   <Text
                     modifiers={[
