@@ -634,7 +634,13 @@ export default function App() {
               {/* 第一行：目标对象。标题在卡片外上方，行内左侧（左对齐）放大显示图标与名称 */}
               <Section header={<Text>目标对象</Text>}>
                 <NavigationLink value="targets">
-                  <HStack spacing={10}>
+                  {/* minHeight 与下方「获取布局」行一致，两个气泡等高 */}
+                  <HStack
+                    spacing={10}
+                    modifiers={[
+                      frame({ minHeight: 56, maxWidth: Infinity }),
+                    ]}
+                  >
                     {targetIcon !== "" && (
                       <Image uiImage={targetIcon} modifiers={appIcon} />
                     )}
@@ -645,6 +651,7 @@ export default function App() {
               </Section>
 
               <Section
+                header={<Text>获取布局</Text>}
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
@@ -653,7 +660,11 @@ export default function App() {
                   </Text>
                 }
               >
-                <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                <HStack
+                  modifiers={[
+                    frame({ minHeight: 56, maxWidth: Infinity }),
+                  ]}
+                >
                   <Spacer />
                   <Button
                     label={recordingBusy ? "正在获取…" : "获取界面布局截图"}
