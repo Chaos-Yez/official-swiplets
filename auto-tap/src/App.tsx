@@ -640,17 +640,21 @@ export default function App() {
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
-                      ? "1. 点「坐标记录」会跳转到目标对象，约 3 秒后自动抓取画面并返回。\n2. 在画面上点一下定位红色标记，按住标记可拖动精确定位。\n3. 选好要保存的点位后点「保存为点位」，最多 8 个。\n4. 再次抓取会覆盖上一张；截图 10 分钟后自动销毁。"
+                      ? "1. 点「点击记录」会跳转到目标对象，约 3 秒后自动抓取画面并返回。\n2. 在画面上点一下定位红色标记，按住标记可拖动精确定位。\n3. 选好要保存的点位后点「保存为点位」，最多 8 个。\n4. 再次抓取会覆盖上一张；截图 10 分钟后自动销毁。"
                       : detail}
                   </Text>
                 }
               >
-                <Button
-                  label={recordingBusy ? "正在记录…" : "坐标记录（跳转对象）"}
-                  systemImage="mappin.and.ellipse"
-                  onPress={capture}
-                  modifiers={[buttonStyle("bordered"), tint("orange")]}
-                />
+                <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                  <Spacer />
+                  <Button
+                    label={recordingBusy ? "正在记录…" : "点击记录"}
+                    systemImage="mappin.and.ellipse"
+                    onPress={capture}
+                    modifiers={[buttonStyle("bordered"), tint("orange")]}
+                  />
+                  <Spacer />
+                </HStack>
                 {recording !== null && shotSize !== null && (
                   <RNHostView matchContents>
                     <PointPicker
