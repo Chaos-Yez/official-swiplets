@@ -31,6 +31,7 @@ import {
   font,
   foregroundStyle,
   frame,
+  fixedSize,
   labelStyle,
   navigationBarTitleDisplayMode,
   navigationTitle,
@@ -78,10 +79,11 @@ const caption = [
   foregroundStyle({ type: "hierarchical", style: "secondary" }),
 ];
 
-/** 点位行里的坐标数字：比 caption 再小一号，避免抢眼 */
+/** 点位行里的坐标数字：比 caption 再小一号，且不参与压缩（两个四位数也不会挤在一起） */
 const coordCaption = [
   font({ textStyle: "caption2" }),
   foregroundStyle({ type: "hierarchical", style: "secondary" }),
+  fixedSize({ horizontal: true }),
 ];
 
 /** 拖动把手：放大一点，方便按住整行拖动排序 */
