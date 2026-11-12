@@ -7,8 +7,8 @@
     {
       "id": "roco-auto-tap",
       "name": "连点器",
-      "version": "0.3.0-nightly",
-      "versionCode": 10,
+      "version": "0.4.0-nightly",
+      "versionCode": 11,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -34,8 +34,8 @@
         }
       ],
       "url": "roco-auto-tap.swiplet",
-      "size": 19887,
-      "sha256": "bcc48cc4f1348b38814ca93d8369ef9678b870fbf16e73ed8258abb23225bebc"
+      "size": 20601,
+      "sha256": "93d6e3bee1110ac839ab78e3397489fa394f45372e9888e60020ba67bf029642"
     }
   ]
 }
