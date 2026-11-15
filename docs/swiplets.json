@@ -8,7 +8,7 @@
       "id": "auto-tap",
       "name": "连点器",
       "version": "0.2.0-nightly",
-      "versionCode": 46,
+      "versionCode": 47,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -19,8 +19,11 @@
       "actions": [
         {
           "name": "start",
-          "title": "开始自动投掷",
-          "description": "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或锁屏自动停止"
+          "title": "开始连点",
+          "description": "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或锁屏自动停止",
+          "expose": [
+            "shortcuts"
+          ]
         },
         {
           "name": "record",
@@ -34,8 +37,8 @@
         }
       ],
       "url": "auto-tap.swiplet",
-      "size": 22077,
-      "sha256": "0c6e48a329621c30768d222bb62fc3ec7020d9fc108283699eb217d2686f4a25"
+      "size": 22122,
+      "sha256": "592a222cc1488010510ec61d8e7dededa8097d0e49c9db0e8fd60963653a4eb5"
     }
   ]
 }
