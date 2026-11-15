@@ -6,6 +6,9 @@
 // listApps : 读取设备已安装应用，供设置页维护跳转白名单。
 // 自动停止由 watchStop() 四路并行监控：应用事件 / 前台 / 锁屏 / 屏幕状态，
 // 任一命中立刻 abort 连点循环。
+// 从快捷指令启动时，输入法（如 com.tencent.wetype）会占用前台身份，导致
+// launchApplication 自带的 3.5s 校验误报「launched, but xxx is still in
+// front」；目标其实已启动，见 confirmLaunched() 的容错，别改回直接 return。
 // 注意：iOS 下拉控制中心不改变前台身份，也没有可靠事件，故不再尝试检测；
 // 要停止请切回 Swipt / 切到别的应用 / 锁屏。
 //
@@ -60,10 +63,83 @@ interface Report {
   front: string;
   stopReason: string;
   lastError: string;
+  /** 诊断用：app / shortcuts / api，方便从快捷指令的返回值判断调用来源 */
+  caller: string;
 }
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 键盘 / 输入法扩展会短暂占用「前台应用」身份。
+ *
+ * 从 iOS 快捷指令启动连点时，「运行 Swiplet 动作」带着输入框，微信输入法
+ * com.tencent.wetype 可能一直挂在前台；官方 Phone.Launch 有写死的 3.5s
+ * 前台校验，于是报 "com.tencent.nrc launched, but com.tencent.wetype is
+ * still in front after 3.5s"。目标其实已经启动、游戏界面也在最前面，
+ * 这种身份不该被当成「切走」。从插件设置页启动没有键盘，所以一直正常。
+ *
+ * launchApplication 没有参数可以关掉这个校验，只能在插件侧容错。
+ */
+const KEYBOARD_HINTS = [
+  "wetype",
+  "keyboard",
+  "inputmethod",
+  "sogou",
+  "baidu.input",
+  "iflytek",
+];
+
+function isKeyboardFront(front: string): boolean {
+  const lower = front.toLowerCase();
+  return KEYBOARD_HINTS.some((hint) => lower.includes(hint));
+}
+
+/** 前台为空（读取失败）、是目标 App、或只是输入法残留，都允许继续点击 */
+function frontAllowsTapping(front: string, target: string): boolean {
+  return front === "" || front === target || isKeyboardFront(front);
+}
+
+/** 切换过程中的过渡身份，不算真正切到别的应用 */
+function isTransientFront(front: string): boolean {
+  return (
+    isKeyboardFront(front) ||
+    front === SWIPT_BUNDLE_ID ||
+    front === "com.apple.springboard"
+  );
+}
+
+/**
+ * launchApplication 抛错后自行确认前台，最多再等约 2 秒。
+ * 只有确实切到另一个应用才算失败；输入法残留 / 前台读不到都按已跳转继续。
+ */
+async function confirmLaunched(
+  signal: AbortSignal,
+  target: string,
+  report: Report,
+): Promise<boolean> {
+  let last = "";
+  for (let attempt = 0; attempt < 5 && !signal.aborted; attempt += 1) {
+    const front = await device.foregroundApplication
+      .get({ signal })
+      .catch(() => "");
+    if (front !== "") {
+      report.front = front;
+      last = front;
+    }
+    // 输入法残留 / 目标已在前台 / 读不到：直接放行。
+    // Swipt 自身或桌面属于切换中间态，再等一会儿让游戏真正到前台。
+    if (front === "" || front === target || isKeyboardFront(front)) {
+      return true;
+    }
+    await sleep(400, signal);
+  }
+  if (last !== "" && last !== target && !isTransientFront(last)) {
+    report.stopReason = `前台仍为 ${last}`;
+    return false;
+  }
+  return !signal.aborted;
 }
 
 /**
@@ -146,7 +222,8 @@ async function runTaps(
       .catch(() => "");
     if (front !== "") {
       report.front = front;
-      if (front !== target) {
+      // 输入法残留仍占着前台身份时不要误判为「切走」
+      if (!frontAllowsTapping(front, target)) {
         report.stopReason = `前台已切换为 ${front}`;
         return;
       }
@@ -206,7 +283,8 @@ async function watchStop(
         }
         if (
           (event.type === "launch" || event.type === "foreground") &&
-          event.bundleId !== target
+          event.bundleId !== target &&
+          !isKeyboardFront(event.bundleId)
         ) {
           halt(`切换到 ${event.bundleId}`);
           return;
@@ -222,7 +300,7 @@ async function watchStop(
       for await (const front of device.foregroundApplication.values({ signal })) {
         if (!ready() || front === "") continue;
         report.front = front;
-        if (front !== target) {
+        if (!frontAllowsTapping(front, target)) {
           halt(`前台已切换为 ${front}`);
           return;
         }
@@ -280,7 +358,7 @@ export default defineExtension({
         "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或锁屏自动停止",
       // 注册到 iOS 快捷指令 / App Intents，可在桌面一键启动
       expose: ["shortcuts"],
-      async run(_, { signal }) {
+      async run(_, { signal, caller }) {
         const target = targetBundle(await readSettings());
         const report: Report = {
           taps: 0,
@@ -290,15 +368,25 @@ export default defineExtension({
           front: "",
           stopReason: "已停止",
           lastError: "",
+          caller,
         };
         const stop = new AbortController();
         const loopSignal = AbortSignal.any([signal, stop.signal]);
         try {
           await device.launchApplication(target, { signal });
         } catch (error) {
-          report.lastError = `跳转失败：${messageOf(error)}`;
-          report.stopReason = `未能切换到 ${target}`;
-          return report;
+          // 官方 Launch 自带 3.5s 前台校验；快捷指令里输入法残留会误报失败，
+          // 但错误信息会写明目标 "launched"。自行确认前台后再决定是否放弃。
+          const message = messageOf(error);
+          if (!(await confirmLaunched(loopSignal, target, report))) {
+            report.lastError = `跳转失败：${message}`;
+            if (report.stopReason === "已停止") {
+              report.stopReason = `未能切换到 ${target}`;
+            }
+            return report;
+          }
+          // 已确认可以继续，别把误报留在返回值里干扰快捷指令的输出
+          report.lastError = "";
         }
         await sleep(LAUNCH_SETTLE_MS, loopSignal);
         report.front =
