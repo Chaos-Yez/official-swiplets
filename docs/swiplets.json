@@ -8,7 +8,7 @@
       "id": "auto-tap",
       "name": "连点器",
       "version": "0.2.0-nightly",
-      "versionCode": 50,
+      "versionCode": 51,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -26,6 +26,14 @@
           ]
         },
         {
+          "name": "stop",
+          "title": "停止连点",
+          "description": "停止当前正在运行的连点，停留在当前界面，不跳转应用",
+          "expose": [
+            "shortcuts"
+          ]
+        },
+        {
           "name": "record",
           "title": "坐标记录",
           "description": "跳转到勾选的目标对象并抓取当前画面，返回设置页后点图记录坐标"
@@ -37,8 +45,8 @@
         }
       ],
       "url": "auto-tap.swiplet",
-      "size": 24974,
-      "sha256": "975bf58353cbbc2af7ffc7ee4aa0941b55303c19824f1a319ee9f43dfb7c745b"
+      "size": 26280,
+      "sha256": "567c0907fd5e4c2cc7305961ca8fd7dd1f861fac7f89a8a4df009bafebbe51f9"
     }
   ]
 }
