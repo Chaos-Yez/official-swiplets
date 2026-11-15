@@ -8,7 +8,7 @@
       "id": "auto-tap",
       "name": "连点器",
       "version": "0.2.0-nightly",
-      "versionCode": 47,
+      "versionCode": 48,
       "icon": {
         "color": "orange",
         "symbol": "hand.tap.fill"
@@ -37,8 +37,8 @@
         }
       ],
       "url": "auto-tap.swiplet",
-      "size": 22122,
-      "sha256": "592a222cc1488010510ec61d8e7dededa8097d0e49c9db0e8fd60963653a4eb5"
+      "size": 22924,
+      "sha256": "771861a737490011dce056534213fc984176ed079a255c0aca64e007e7b21f31"
     }
   ]
 }
