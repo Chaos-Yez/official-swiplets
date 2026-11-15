@@ -17,7 +17,7 @@
 // 并 defer e.close()。Action 的 run() 一返回，整个 JS 引擎立即销毁。
 // 设置页调用（caller=app）的连点循环必须 await 在 Action 内，不能 fire-and-forget；
 // 但快捷指令（caller=shortcuts）会让 iOS App Intent timeout，那条路径只做
-// 跳转 + 写启动命令就立即返回，由常驻服务 run() 接手循环。
+// 跳转 + 写启动命令就立即返回，由常驻服务 run() 接手循环与「运行等待时间」。
 // run() 常驻服务与 Action 是两个独立引擎，内存不共享；配置、坐标与启动命令
 // 都通过 dataDirectory 里的文件传递。
 //
@@ -31,6 +31,7 @@ import { dataDirectory } from "@swipt/api/file-system";
 import * as input from "@swipt/api/input";
 import { defineAction, defineExtension } from "@swipt/api/swiplet";
 import {
+  clampLaunchDelay,
   clearRecording,
   readSettings,
   recordImageFile,
@@ -44,10 +45,10 @@ import {
 
 /** Swipt 自身，抓取画面后跳回设置页用（官方 ownApps 正则里的前缀） */
 const SWIPT_BUNDLE_ID = "io.nekohasekai.swipt";
-/** 跳转后等待切换动画并给用户准备时间 */
-const LAUNCH_SETTLE_MS = 3000;
 /** 坐标记录：跳到游戏后留给用户切到目标画面的时间 */
 const RECORD_DELAY_MS = 2000;
+// 跳转后到首次点击之间的「运行等待时间」不在此处定义：
+// 由 settings.launchDelayMs 提供（默认 3 秒，可在设置页自定义）。
 /** 启动后的事件宽限期，避免切换动画里的系统 UI 事件误停 */
 const GRACE_MS = 800;
 /** 连续点击失败多少次后退出 */
@@ -358,17 +359,21 @@ const COMMAND_FILE = "shortcut-start.json";
 interface StartCommand {
   readonly seq: number;
   readonly target: string;
+  /** 运行等待时间（毫秒）：等待放在常驻服务里，动作才能立刻返回 */
+  readonly delayMs: number;
 }
 
 const commandFile = () => dataDirectory.file(COMMAND_FILE);
 
-async function postStartCommand(target: string): Promise<void> {
+async function postStartCommand(target: string, delayMs: number): Promise<void> {
   try {
     if (!(await dataDirectory.exists())) await dataDirectory.create();
   } catch {
     // 已存在
   }
-  await commandFile().write(JSON.stringify({ seq: Date.now(), target }));
+  await commandFile().write(
+    JSON.stringify({ seq: Date.now(), target, delayMs }),
+  );
 }
 
 /** 读一次命令就删除，避免服务重启后把旧命令又跑一遍 */
@@ -383,7 +388,12 @@ async function takeStartCommand(): Promise<StartCommand | null> {
       return null;
     }
     await commandFile().delete().catch(() => {});
-    return { seq: raw.seq, target: raw.target };
+    return {
+      seq: raw.seq,
+      target: raw.target,
+      // 兼容旧命令 / 脏数据：没有 delayMs 时按默认 3 秒处理
+      delayMs: clampLaunchDelay(Number(raw.delayMs)),
+    };
   } catch {
     return null;
   }
@@ -396,6 +406,7 @@ async function takeStartCommand(): Promise<StartCommand | null> {
 async function runServiceLoop(
   signal: AbortSignal,
   target: string,
+  delayMs: number,
 ): Promise<void> {
   for (let attempt = 0; attempt < 10 && !signal.aborted; attempt += 1) {
     const front = await device.foregroundApplication
@@ -404,6 +415,11 @@ async function runServiceLoop(
     if (front === target || front === "" || isKeyboardFront(front)) break;
     await sleep(300, signal);
   }
+  if (signal.aborted) return;
+
+  // 「运行等待时间」放在常驻服务里等：Action 已经返回，等再久也不会让
+  // App Intent timeout。设置页路径则直接在 Action 里等，两条路径行为一致。
+  await sleep(delayMs, signal);
   if (signal.aborted) return;
 
   const stop = new AbortController();
@@ -438,7 +454,7 @@ export default defineExtension({
     while (!signal.aborted) {
       const command = await takeStartCommand();
       if (command !== null) {
-        await runServiceLoop(signal, command.target);
+        await runServiceLoop(signal, command.target, command.delayMs);
         // 丢掉循环期间堆积的命令，避免结束后又自动重跑一次
         await commandFile().delete().catch(() => {});
       }
@@ -454,7 +470,10 @@ export default defineExtension({
       // 注册到 iOS 快捷指令 / App Intents，可在桌面一键启动
       expose: ["shortcuts"],
       async run(_, { signal, caller }) {
-        const target = targetBundle(await readSettings());
+        const settings = await readSettings();
+        const target = targetBundle(settings);
+        // 设置页里可以自定义；老存档 sanitize 后自动回落到 3000
+        const delayMs = clampLaunchDelay(settings.launchDelayMs);
         const report: Report = {
           taps: 0,
           points: 0,
@@ -483,7 +502,12 @@ export default defineExtension({
           // 已确认可以继续，别把误报留在返回值里干扰快捷指令的输出
           report.lastError = "";
         }
-        await sleep(LAUNCH_SETTLE_MS, loopSignal);
+        // 设置页调用：按「运行等待时间」等一会儿再开跑。
+        // 快捷指令路径不在这里等，改由常驻服务拿到命令后等待，
+        // 否则动作迟迟不返回会被 iOS App Intent 判定 timeout。
+        if (caller !== "shortcuts") {
+          await sleep(delayMs, loopSignal);
+        }
         report.front =
           (await device.foregroundApplication
             .get({ signal })
@@ -492,7 +516,7 @@ export default defineExtension({
         if (caller === "shortcuts") {
           // App Intent 必须尽快返回，否则 iOS 会 timeout 并取消这次调用。
           // 跳转已经完成，把连点循环交给常驻服务 run()，动作立即返回。
-          await postStartCommand(target);
+          await postStartCommand(target, delayMs);
           // 稍等一下看命令是否被服务取走：没取走通常是插件常驻服务没开启
           await sleep(700, loopSignal);
           const pending = await commandFile().stat().catch(() => null);

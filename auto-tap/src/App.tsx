@@ -49,11 +49,14 @@ import {
   APP_VERSION,
   clampInterval,
   clampJitter,
+  clampLaunchDelay,
   clearRecording,
   DEFAULT_JITTER_PX,
+  DEFAULT_LAUNCH_DELAY_MS,
   makeGameId,
   MAX_GAMES,
   MAX_JITTER_PX,
+  MAX_LAUNCH_DELAY_MS,
   MAX_POINTS,
   pointName,
   readRecording,
@@ -124,6 +127,25 @@ const JITTER_OPTIONS: [number, string][] = [
   [50, "±50 像素"],
 ];
 
+/** 运行等待时间预设（毫秒）：跳到目标对象后、开始第一次点击前的等待 */
+const DELAY_OPTIONS: [number, string][] = [
+  [0, "0 秒（立即开始）"],
+  [1000, "1 秒"],
+  [2000, "2 秒"],
+  [3000, "3 秒（默认）"],
+  [5000, "5 秒"],
+  [10000, "10 秒"],
+  [15000, "15 秒"],
+  [30000, "30 秒"],
+  [60000, "60 秒"],
+];
+
+/** 毫秒转成界面秒数：整数不带小数，2.5 秒这类保留一位 */
+function delayLabel(ms: number): string {
+  const seconds = ms / 1000;
+  return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1);
+}
+
 interface InstalledApp {
   bundleId: string;
   name: string;
@@ -146,6 +168,7 @@ export default function App() {
   const [savedTip, setSavedTip] = useState("");
   const [targetIndex, setTargetIndex] = useState(0);
   const [customJitter, setCustomJitter] = useState("");
+  const [customDelay, setCustomDelay] = useState("");
   const [detail, setDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
@@ -357,6 +380,23 @@ export default function App() {
     setDetail(`点击偏移已设为 ±${jitterPx} 像素`);
   };
 
+  /** 运行等待时间子页：应用自定义秒数 */
+  const applyCustomDelay = () => {
+    if (settings === null) return;
+    const seconds = Number(customDelay);
+    if (
+      customDelay.trim() === "" ||
+      !Number.isFinite(seconds) ||
+      seconds < 0
+    ) {
+      setDetail("请输入有效的秒数（0 表示跳转后立即开始）");
+      return;
+    }
+    const launchDelayMs = clampLaunchDelay(seconds * 1000);
+    update({ ...settings, launchDelayMs });
+    setDetail(`运行等待时间已设为 ${delayLabel(launchDelayMs)} 秒`);
+  };
+
   const onMove = (sources: number[], destination: number) => {
     if (settings === null) return;
     const from = sources[0];
@@ -440,6 +480,21 @@ export default function App() {
     ]);
   }
 
+  const delayOptions = [...DELAY_OPTIONS];
+  if (
+    settings !== null &&
+    !delayOptions.some(([ms]) => ms === settings.launchDelayMs)
+  ) {
+    delayOptions.push([
+      settings.launchDelayMs,
+      `自定义 ${delayLabel(settings.launchDelayMs)} 秒`,
+    ]);
+  }
+  /** 主页面与目标对象子页的说明文案统一读这里，改了设置就同步变化 */
+  const delaySeconds = delayLabel(
+    settings === null ? DEFAULT_LAUNCH_DELAY_MS : settings.launchDelayMs,
+  );
+
   // 红色标记跟随 X / Y 输入框，手动改坐标也能立刻看到位置
   const parsedX = Number(coordX);
   const parsedY = Number(coordY);
@@ -499,7 +554,7 @@ export default function App() {
             <Section
               footer={
                 <Text modifiers={caption}>
-                  点「开始连点」后约 3 秒开始自动连点。{"\n"}
+                  点「开始连点」后约 {delaySeconds} 秒开始自动连点。{"\n"}
                   切回 Swipt、切到其他应用、锁屏或熄屏都会自动停止。
                 </Text>
               }
@@ -545,6 +600,14 @@ export default function App() {
                     {settings === null
                       ? "—"
                       : `±${settings.jitterPx} 像素`}
+                  </Text>
+                </LabeledContent>
+              </NavigationLink>
+              {/* 运行等待时间：按用户要求放在「点击偏移」下方 */}
+              <NavigationLink value="delay">
+                <LabeledContent label="运行等待时间">
+                  <Text modifiers={caption}>
+                    {settings === null ? "—" : `${delaySeconds} 秒`}
                   </Text>
                 </LabeledContent>
               </NavigationLink>
@@ -803,7 +866,7 @@ export default function App() {
                 footer={
                   <Text modifiers={caption}>
                     {detail === ""
-                      ? "1. 使用前先在「当前目标对象」里选好要连点的应用。\n2. 点「开始连点」会先跳转过去，约 3 秒后开始自动连点。\n3. 切回 Swipt、切到其他应用、锁屏或屏幕熄灭都会自动停止。"
+                      ? `1. 使用前先在「当前目标对象」里选好要连点的应用。\n2. 点「开始连点」会先跳转过去，约 ${delaySeconds} 秒后开始自动连点。\n3. 切回 Swipt、切到其他应用、锁屏或屏幕熄灭都会自动停止。`
                       : detail}
                   </Text>
                 }
@@ -908,6 +971,68 @@ export default function App() {
                   <Button
                     label="应用自定义偏移"
                     onPress={applyCustomJitter}
+                    modifiers={[buttonStyle("bordered")]}
+                  />
+                  <Spacer />
+                </HStack>
+              </Section>
+            </Form>
+          </Toolbar>
+        </NavigationDestination>
+
+        {/* ============ 运行等待时间子页面 ============ */}
+        <NavigationDestination value="delay">
+          <Toolbar modifiers={[navigationTitle("运行等待时间")]}>
+            <Form>
+              <Section
+                title="等待时间"
+                footer={
+                  <Text modifiers={caption}>
+                    跳转到目标对象后，等这里设定的时间再开始第一次点击，给游戏加载和切到目标画面留时间。默认 3 秒，设 0 则立即开始；从设置页和快捷指令启动都生效。
+                  </Text>
+                }
+              >
+                {settings !== null && (
+                  <Picker<number>
+                    label="运行等待时间"
+                    selection={settings.launchDelayMs}
+                    onSelectionChange={(value) =>
+                      update({
+                        ...settings,
+                        launchDelayMs: clampLaunchDelay(Number(value)),
+                      })
+                    }
+                  >
+                    {delayOptions.map(([ms, label]) => (
+                      <Text key={ms} modifiers={[tag(ms)]}>
+                        {label}
+                      </Text>
+                    ))}
+                  </Picker>
+                )}
+                <LabeledContent label="当前等待">
+                  <Text>{delaySeconds} 秒</Text>
+                </LabeledContent>
+              </Section>
+
+              <Section
+                title="自定义"
+                footer={
+                  <Text modifiers={caption}>
+                    可填 0 ~ {MAX_LAUNCH_DELAY_MS / 1000} 秒，支持一位小数（如 2.5）；超出上限按 60 秒处理。
+                  </Text>
+                }
+              >
+                <TextField
+                  placeholder={`自定义秒数（0 ~ ${MAX_LAUNCH_DELAY_MS / 1000}）`}
+                  onTextChange={setCustomDelay}
+                  modifiers={[]}
+                />
+                <HStack modifiers={[frame({ maxWidth: Infinity })]}>
+                  <Spacer />
+                  <Button
+                    label="应用自定义等待时间"
+                    onPress={applyCustomDelay}
                     modifiers={[buttonStyle("bordered")]}
                   />
                   <Spacer />

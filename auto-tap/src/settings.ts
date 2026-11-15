@@ -17,6 +17,10 @@ export const DEFAULT_BUNDLE_ID = "com.tencent.nrc";
 export const DEFAULT_JITTER_PX = 10;
 /** 点击偏移上限，避免误触相邻按钮 */
 export const MAX_JITTER_PX = 200;
+/** 默认「运行等待时间」：跳到目标对象后等 3 秒再开始连点 */
+export const DEFAULT_LAUNCH_DELAY_MS = 3000;
+/** 运行等待时间上限 60 秒，数值过大只会拖慢启动 */
+export const MAX_LAUNCH_DELAY_MS = 60_000;
 /** 坐标记录截图保留时长：10 分钟后自动销毁 */
 export const RECORD_TTL_MS = 10 * 60 * 1000;
 
@@ -76,6 +80,8 @@ export interface Settings {
   intervalMs?: number;
   /** 每次点击的随机偏移半径（参考截图像素），0 = 精确点击 */
   jitterPx: number;
+  /** 跳转到目标对象后、开始第一次点击前的等待时间（毫秒），默认 3000 */
+  launchDelayMs: number;
   points: TapPoint[];
   games: Game[];
   /** 当前勾选、要跳转的游戏 id */
@@ -106,6 +112,7 @@ export function defaultGames(): Game[] {
 export function defaultSettings(): Settings {
   return {
     jitterPx: DEFAULT_JITTER_PX,
+    launchDelayMs: DEFAULT_LAUNCH_DELAY_MS,
     points: [
       { id: "p1", name: pointName(0), x: 1760, y: 780, enabled: true, intervalMs: 1000 },
       { id: "p2", name: pointName(1), x: -1, y: -1, enabled: false, intervalMs: 1000 },
@@ -134,6 +141,12 @@ export function clampInterval(value: number): number {
 export function clampJitter(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_JITTER_PX;
   return Math.min(MAX_JITTER_PX, Math.max(0, Math.round(value)));
+}
+
+/** 运行等待时间限幅；旧存档没有此字段时回退默认 3 秒 */
+export function clampLaunchDelay(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_LAUNCH_DELAY_MS;
+  return Math.min(MAX_LAUNCH_DELAY_MS, Math.max(0, Math.round(value)));
 }
 
 function sanitizeGames(value: unknown): Game[] {
@@ -175,6 +188,8 @@ function sanitize(value: unknown): Settings {
   const legacyInterval = clampInterval(Number(raw.intervalMs));
   return {
     jitterPx: clampJitter(Number(raw.jitterPx)),
+    // 老版本存档没有这个字段 → Number(undefined)=NaN → 自动回落到 3 秒
+    launchDelayMs: clampLaunchDelay(Number(raw.launchDelayMs)),
     points: raw.points.slice(0, MAX_POINTS).map((p, index) => {
       const item = (p ?? {}) as Partial<TapPoint>;
       const x = Number(item.x);
