@@ -14,9 +14,12 @@
 //
 // 【架构要点，别再改回去】
 // internal/automation/engine.go: Host.execute() 每次执行 Action 都会 newEngine()
-// 并 defer e.close()。Action 的 run() 一返回，整个 JS 引擎立即销毁。所以连点
-// 循环必须 await 在 Action 内，不能 fire-and-forget。run() 常驻服务与 Action
-// 是两个独立引擎，内存不共享；配置与坐标通过 dataDirectory 里的文件传递。
+// 并 defer e.close()。Action 的 run() 一返回，整个 JS 引擎立即销毁。
+// 设置页调用（caller=app）的连点循环必须 await 在 Action 内，不能 fire-and-forget；
+// 但快捷指令（caller=shortcuts）会让 iOS App Intent timeout，那条路径只做
+// 跳转 + 写启动命令就立即返回，由常驻服务 run() 接手循环。
+// run() 常驻服务与 Action 是两个独立引擎，内存不共享；配置、坐标与启动命令
+// 都通过 dataDirectory 里的文件传递。
 //
 // input.tap 与 device.info().screen 同一坐标系（ops.go deviceTap → TapPoint →
 // touchPoint 用 screenGeometry 归一化，screen.go touchTurns 负责旋转）。
@@ -342,13 +345,105 @@ async function watchStop(
   await Promise.all([appEvents, foreground, lockState, display]);
 }
 
+// ---------------------------------------------------------------------------
+// 快捷指令 / App Intents 的调用必须「尽快返回」。
+// 官方 RunSwipletActionIntent.perform() 会 await 动作返回值，iOS 对 App Intent
+// 有执行时限；无限循环的连点动作必然 timeout，信号一被取消连点就停。
+// 所以从 shortcuts 调用时，Action 只做跳转 + 写一个启动命令就返回，
+// 真正的循环交给常驻服务 run()（用的是服务的 signal，不受本次调用影响）。
+// Action 与常驻服务是两个独立 JS 引擎，内存不共享，靠 dataDirectory 文件通信。
+// ---------------------------------------------------------------------------
+const COMMAND_FILE = "shortcut-start.json";
+
+interface StartCommand {
+  readonly seq: number;
+  readonly target: string;
+}
+
+const commandFile = () => dataDirectory.file(COMMAND_FILE);
+
+async function postStartCommand(target: string): Promise<void> {
+  try {
+    if (!(await dataDirectory.exists())) await dataDirectory.create();
+  } catch {
+    // 已存在
+  }
+  await commandFile().write(JSON.stringify({ seq: Date.now(), target }));
+}
+
+/** 读一次命令就删除，避免服务重启后把旧命令又跑一遍 */
+async function takeStartCommand(): Promise<StartCommand | null> {
+  try {
+    // 轮询很频繁，先用 stat 判存在，别每 250ms 抛一次「文件不存在」
+    if ((await commandFile().stat()) === null) return null;
+    const raw = JSON.parse(await commandFile().text()) as Partial<StartCommand>;
+    if (typeof raw.seq !== "number" || typeof raw.target !== "string") {
+      // 命令内容损坏就丢掉，别让轮询一直卡在同一个文件上
+      await commandFile().delete().catch(() => {});
+      return null;
+    }
+    await commandFile().delete().catch(() => {});
+    return { seq: raw.seq, target: raw.target };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 常驻服务接到命令后跑连点循环。跳转已由 Action 完成，这里先等前台稳定：
+ * 动作返回后 iOS 可能把 Swipt 短暂拉回前台，直接开跑会被自动停止逻辑误判。
+ */
+async function runServiceLoop(
+  signal: AbortSignal,
+  target: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10 && !signal.aborted; attempt += 1) {
+    const front = await device.foregroundApplication
+      .get({ signal })
+      .catch(() => "");
+    if (front === target || front === "" || isKeyboardFront(front)) break;
+    await sleep(300, signal);
+  }
+  if (signal.aborted) return;
+
+  const stop = new AbortController();
+  const loopSignal = AbortSignal.any([signal, stop.signal]);
+  const report: Report = {
+    taps: 0,
+    points: 0,
+    screen: "",
+    point: "",
+    front: "",
+    stopReason: "已停止",
+    lastError: "",
+    caller: "service",
+  };
+  const watcher = watchStop(
+    loopSignal,
+    stop,
+    Date.now() + GRACE_MS,
+    report,
+    target,
+  );
+  await runTaps(loopSignal, report, target);
+  stop.abort();
+  await watcher.catch(() => {});
+}
+
 export default defineExtension({
   // 常驻服务由 Swipt 自动托管；界面不再显示后台服务开关。
   async run({ signal }) {
-    await new Promise<void>((resolve) => {
-      if (signal.aborted) return resolve();
-      signal.addEventListener("abort", () => resolve(), { once: true });
-    });
+    // 轮询快捷指令下发的启动命令。命令触发的连点循环用的是本服务的 signal，
+    // 因此不会随 App Intent 超时一起被取消。
+    while (!signal.aborted) {
+      const command = await takeStartCommand();
+      if (command !== null) {
+        await runServiceLoop(signal, command.target);
+        // 丢掉循环期间堆积的命令，避免结束后又自动重跑一次
+        await commandFile().delete().catch(() => {});
+      }
+      await sleep(250, signal);
+    }
   },
 
   actions: {
@@ -393,6 +488,21 @@ export default defineExtension({
           (await device.foregroundApplication
             .get({ signal })
             .catch(() => "")) || "(读取失败)";
+
+        if (caller === "shortcuts") {
+          // App Intent 必须尽快返回，否则 iOS 会 timeout 并取消这次调用。
+          // 跳转已经完成，把连点循环交给常驻服务 run()，动作立即返回。
+          await postStartCommand(target);
+          // 稍等一下看命令是否被服务取走：没取走通常是插件常驻服务没开启
+          await sleep(700, loopSignal);
+          const pending = await commandFile().stat().catch(() => null);
+          report.stopReason =
+            pending === null
+              ? "已交给常驻服务连点（快捷指令无需等待）"
+              : "启动命令未被取走：请检查 Swipt 里本插件的常驻服务是否开启";
+          return report;
+        }
+
         const watcher = watchStop(
           loopSignal,
           stop,
