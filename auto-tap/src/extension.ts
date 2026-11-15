@@ -1,16 +1,19 @@
 // 连点器 (Swiplet)
 // ---------------------------------------------------------------------------
 // start    : 跳转到「勾选的目标对象」→ 按已启用点位的顺序循环点击，间隔可配置。
+// stop     : 快捷指令专用。只写一个命令文件就立即返回，不跳转任何界面，
+//            当前游戏画面保持在前台；正在跑的循环 100ms 内结束并回到待命。
 // record   : 跳转同一个目标对象 → 抓一张当前画面 → 回到 Swipt 供点选记录坐标。
 //            抓图前先销毁上一张，过期截图由设置页 / readRecording 自动清理。
 // listApps : 读取设备已安装应用，供设置页维护跳转白名单。
 // 自动停止由 watchStop() 四路并行监控：应用事件 / 前台 / 锁屏 / 屏幕状态，
-// 任一命中立刻 abort 连点循环。
+// 任一命中立刻 abort 连点循环；此外快捷指令的 stop 请求也能终止循环。
 // 从快捷指令启动时，输入法（如 com.tencent.wetype）会占用前台身份，导致
 // launchApplication 自带的 3.5s 校验误报「launched, but xxx is still in
 // front」；目标其实已启动，见 confirmLaunched() 的容错，别改回直接 return。
 // 注意：iOS 下拉控制中心不改变前台身份，也没有可靠事件，故不再尝试检测；
-// 要停止请切回 Swipt / 切到别的应用 / 锁屏。
+// 要停止可切回 Swipt / 切到别的应用 / 锁屏，或用快捷指令「停止连点」
+// （后者不跳转界面，见 stop 动作）。
 //
 // 【架构要点，别再改回去】
 // internal/automation/engine.go: Host.execute() 每次执行 Action 都会 newEngine()
@@ -18,8 +21,8 @@
 // 设置页调用（caller=app）的连点循环必须 await 在 Action 内，不能 fire-and-forget；
 // 但快捷指令（caller=shortcuts）会让 iOS App Intent timeout，那条路径只做
 // 跳转 + 写启动命令就立即返回，由常驻服务 run() 接手循环与「运行等待时间」。
-// run() 常驻服务与 Action 是两个独立引擎，内存不共享；配置、坐标与启动命令
-// 都通过 dataDirectory 里的文件传递。
+// run() 常驻服务与 Action 是两个独立引擎，内存不共享；配置、坐标、启动命令、
+// 运行中标记与停止请求都通过 dataDirectory 里的文件传递。
 //
 // input.tap 与 device.info().screen 同一坐标系（ops.go deviceTap → TapPoint →
 // touchPoint 用 screenGeometry 归一化，screen.go touchTurns 负责旋转）。
@@ -53,6 +56,11 @@ const RECORD_DELAY_MS = 2000;
 const GRACE_MS = 800;
 /** 连续点击失败多少次后退出 */
 const MAX_FAILURES = 3;
+/** 停止请求的有效期：服务被回收后残留的请求不能误杀很久之后的连点 */
+const STOP_TTL_MS = 30_000;
+/** 长等待分片检查的间隔，保证「停止连点」最多 100ms 内生效 */
+const STOP_CHECK_MS = 100;
+const STOP_REASON = "已被快捷指令「停止连点」终止";
 
 interface ScreenSize {
   readonly width: number;
@@ -221,6 +229,11 @@ async function runTaps(
   let failures = 0;
   let index = 0;
   while (!signal.aborted) {
+    // 快捷指令「停止连点」：只结束循环，不跳转任何界面
+    if (await consumeStopRequest()) {
+      report.stopReason = STOP_REASON;
+      return;
+    }
     const front = await device.foregroundApplication
       .get({ signal })
       .catch(() => "");
@@ -251,8 +264,17 @@ async function runTaps(
       }
     }
     index += 1;
-    // 每个点位用自己的间隔；老数据没有该字段时兜底 1 秒
-    await sleep(pointItem.intervalMs > 0 ? pointItem.intervalMs : 1000, signal);
+    // 每个点位用自己的间隔；老数据没有该字段时兜底 1 秒。
+    // 用分片等待，长间隔（最长 60 秒）里也能立刻响应「停止连点」。
+    if (
+      await sleepOrStop(
+        pointItem.intervalMs > 0 ? pointItem.intervalMs : 1000,
+        signal,
+      )
+    ) {
+      report.stopReason = STOP_REASON;
+      return;
+    }
   }
 }
 
@@ -352,9 +374,14 @@ async function watchStop(
 // 有执行时限；无限循环的连点动作必然 timeout，信号一被取消连点就停。
 // 所以从 shortcuts 调用时，Action 只做跳转 + 写一个启动命令就返回，
 // 真正的循环交给常驻服务 run()（用的是服务的 signal，不受本次调用影响）。
+// 「停止连点」同样是纯文件操作：不调用任何跳转 API，不切换界面，立刻返回。
 // Action 与常驻服务是两个独立 JS 引擎，内存不共享，靠 dataDirectory 文件通信。
 // ---------------------------------------------------------------------------
 const COMMAND_FILE = "shortcut-start.json";
+/** 运行中标记：只有真正在跑循环时才存在，stop 动作据此判断有没有可停的东西 */
+const STATE_FILE = "running.json";
+/** 停止请求：存在即表示快捷指令要求停止，读到后立刻删除 */
+const STOP_FILE = "shortcut-stop.json";
 
 interface StartCommand {
   readonly seq: number;
@@ -363,17 +390,92 @@ interface StartCommand {
   readonly delayMs: number;
 }
 
-const commandFile = () => dataDirectory.file(COMMAND_FILE);
+interface StopRequest {
+  readonly time: number;
+}
 
-async function postStartCommand(target: string, delayMs: number): Promise<void> {
+const commandFile = () => dataDirectory.file(COMMAND_FILE);
+const stateFile = () => dataDirectory.file(STATE_FILE);
+const stopFile = () => dataDirectory.file(STOP_FILE);
+
+async function ensureDataDirectory(): Promise<void> {
   try {
     if (!(await dataDirectory.exists())) await dataDirectory.create();
   } catch {
     // 已存在
   }
+}
+
+async function postStartCommand(target: string, delayMs: number): Promise<void> {
+  await ensureDataDirectory();
   await commandFile().write(
     JSON.stringify({ seq: Date.now(), target, delayMs }),
   );
+}
+
+/** 开始一轮连点时写入；顺手丢弃上一轮残留的停止请求 */
+async function markRunning(target: string): Promise<void> {
+  await ensureDataDirectory();
+  await stopFile().delete().catch(() => {});
+  await stateFile().write(JSON.stringify({ target, time: Date.now() }));
+}
+
+/** 循环结束（无论何种原因）都清理，避免留下假「运行中」和过期请求 */
+async function clearRunning(): Promise<void> {
+  await stateFile().delete().catch(() => {});
+  await stopFile().delete().catch(() => {});
+}
+
+async function isRunning(): Promise<boolean> {
+  try {
+    return (await stateFile().stat()) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 「停止连点」动作只写这一个文件：不调用 launchApplication，
+ * 不切回 Swipt，也不做任何界面跳转，当前游戏画面保持在前台。
+ */
+async function postStopCommand(): Promise<void> {
+  await ensureDataDirectory();
+  await stopFile().write(JSON.stringify({ time: Date.now() }));
+}
+
+/** 读到即删除；过期或内容损坏的请求直接丢弃，不会误杀下一次连点 */
+async function consumeStopRequest(): Promise<boolean> {
+  try {
+    // 轮询很频繁，先用 stat 判存在，别每 100ms 抛一次「文件不存在」
+    if ((await stopFile().stat()) === null) return false;
+    const raw = JSON.parse(await stopFile().text()) as Partial<StopRequest>;
+    await stopFile().delete().catch(() => {});
+    const time = Number(raw.time);
+    return Number.isFinite(time) && Date.now() - time <= STOP_TTL_MS;
+  } catch {
+    await stopFile().delete().catch(() => {});
+    return false;
+  }
+}
+
+/**
+ * 把一次长等待拆成 100ms 分片，期间不断检查停止请求。
+ * 返回 true = 收到「停止连点」，调用方应立即结束循环；
+ * 返回 false = 等待自然结束或 signal 已被取消。
+ * 点位间隔可设到 60 秒，整段 sleep 会让停止迟迟不生效，必须分片。
+ */
+async function sleepOrStop(ms: number, signal: AbortSignal): Promise<boolean> {
+  const total = Number.isFinite(ms) && ms > 0 ? ms : 0;
+  const deadline = Date.now() + total;
+  while (!signal.aborted) {
+    const remain = deadline - Date.now();
+    if (remain <= 0) break;
+    await sleep(Math.min(STOP_CHECK_MS, remain), signal);
+    if (signal.aborted) return false;
+    if (await consumeStopRequest()) return true;
+  }
+  if (signal.aborted) return false;
+  return consumeStopRequest();
 }
 
 /** 读一次命令就删除，避免服务重启后把旧命令又跑一遍 */
@@ -417,33 +519,40 @@ async function runServiceLoop(
   }
   if (signal.aborted) return;
 
-  // 「运行等待时间」放在常驻服务里等：Action 已经返回，等再久也不会让
-  // App Intent timeout。设置页路径则直接在 Action 里等，两条路径行为一致。
-  await sleep(delayMs, signal);
-  if (signal.aborted) return;
+  // 标记「运行中」，快捷指令的「停止连点」才知道有循环可停。
+  await markRunning(target);
+  try {
+    // 「运行等待时间」放在常驻服务里等：Action 已经返回，等再久也不会让
+    // App Intent timeout。等待期间同样可以被「停止连点」打断。
+    // 设置页路径则直接在 Action 里等，两条路径行为一致。
+    if (await sleepOrStop(delayMs, signal)) return;
+    if (signal.aborted) return;
 
-  const stop = new AbortController();
-  const loopSignal = AbortSignal.any([signal, stop.signal]);
-  const report: Report = {
-    taps: 0,
-    points: 0,
-    screen: "",
-    point: "",
-    front: "",
-    stopReason: "已停止",
-    lastError: "",
-    caller: "service",
-  };
-  const watcher = watchStop(
-    loopSignal,
-    stop,
-    Date.now() + GRACE_MS,
-    report,
-    target,
-  );
-  await runTaps(loopSignal, report, target);
-  stop.abort();
-  await watcher.catch(() => {});
+    const stop = new AbortController();
+    const loopSignal = AbortSignal.any([signal, stop.signal]);
+    const report: Report = {
+      taps: 0,
+      points: 0,
+      screen: "",
+      point: "",
+      front: "",
+      stopReason: "已停止",
+      lastError: "",
+      caller: "service",
+    };
+    const watcher = watchStop(
+      loopSignal,
+      stop,
+      Date.now() + GRACE_MS,
+      report,
+      target,
+    );
+    await runTaps(loopSignal, report, target);
+    stop.abort();
+    await watcher.catch(() => {});
+  } finally {
+    await clearRunning();
+  }
 }
 
 export default defineExtension({
@@ -502,20 +611,14 @@ export default defineExtension({
           // 已确认可以继续，别把误报留在返回值里干扰快捷指令的输出
           report.lastError = "";
         }
-        // 设置页调用：按「运行等待时间」等一会儿再开跑。
-        // 快捷指令路径不在这里等，改由常驻服务拿到命令后等待，
-        // 否则动作迟迟不返回会被 iOS App Intent 判定 timeout。
-        if (caller !== "shortcuts") {
-          await sleep(delayMs, loopSignal);
-        }
-        report.front =
-          (await device.foregroundApplication
-            .get({ signal })
-            .catch(() => "")) || "(读取失败)";
-
         if (caller === "shortcuts") {
           // App Intent 必须尽快返回，否则 iOS 会 timeout 并取消这次调用。
-          // 跳转已经完成，把连点循环交给常驻服务 run()，动作立即返回。
+          // 跳转已经完成，把连点循环交给常驻服务 run()，动作立即返回；
+          // 「运行等待时间」也由服务去等，这里一秒都不多留。
+          report.front =
+            (await device.foregroundApplication
+              .get({ signal })
+              .catch(() => "")) || "(读取失败)";
           await postStartCommand(target, delayMs);
           // 稍等一下看命令是否被服务取走：没取走通常是插件常驻服务没开启
           await sleep(700, loopSignal);
@@ -527,18 +630,61 @@ export default defineExtension({
           return report;
         }
 
-        const watcher = watchStop(
-          loopSignal,
-          stop,
-          Date.now() + GRACE_MS,
-          report,
-          target,
-        );
-        await runTaps(loopSignal, report, target);
-        stop.abort();
-        await watcher.catch(() => {});
-        if (signal.aborted) report.stopReason = "已被系统终止";
-        return report;
+        // 设置页路径：动作内 await 整个循环。同样标记运行中，
+        // 这样从快捷指令点「停止连点」也能停掉这里启动的连点。
+        await markRunning(target);
+        try {
+          // 按「运行等待时间」等一会儿再开跑，等待期间也能被停止。
+          if (await sleepOrStop(delayMs, loopSignal)) {
+            report.stopReason = STOP_REASON;
+            return report;
+          }
+          report.front =
+            (await device.foregroundApplication
+              .get({ signal })
+              .catch(() => "")) || "(读取失败)";
+          const watcher = watchStop(
+            loopSignal,
+            stop,
+            Date.now() + GRACE_MS,
+            report,
+            target,
+          );
+          await runTaps(loopSignal, report, target);
+          stop.abort();
+          await watcher.catch(() => {});
+          if (signal.aborted && report.stopReason === "已停止") {
+            report.stopReason = "已被系统终止";
+          }
+          return report;
+        } finally {
+          await clearRunning();
+        }
+      },
+    }),
+
+    /**
+     * 快捷指令「停止连点」：只写命令文件就立即返回，不调用 launchApplication
+     * 等任何会切换界面的 API，游戏画面保持在前台（用户明确要求「不跳转界面」）。
+     * 常驻服务 / 设置页路径的 runTaps() 会在 100ms 内读到并结束循环，
+     * 之后服务回到轮询待命，不主动拉起任何应用。
+     */
+    stop: defineAction({
+      title: "停止连点",
+      description: "停止当前正在运行的连点，停留在当前界面，不跳转应用",
+      expose: ["shortcuts"],
+      async run(_input, _context) {
+        if (!(await isRunning())) {
+          return {
+            stopped: false,
+            message: "当前没有正在运行的连点",
+          };
+        }
+        await postStopCommand();
+        return {
+          stopped: true,
+          message: "已发送停止请求，连点会在 0.1 秒内结束，界面保持不变",
+        };
       },
     }),
 
