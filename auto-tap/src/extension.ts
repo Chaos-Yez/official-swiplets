@@ -275,10 +275,11 @@ export default defineExtension({
 
   actions: {
     start: defineAction({
-      title: "开始自动投掷",
+      title: "开始连点",
       description:
         "跳转到勾选的目标对象并按已启用点位的顺序循环点击；切换应用或锁屏自动停止",
-      // 不写 expose：不再注册到 iOS 快捷指令 / 轻点背面，只从插件设置页触发
+      // 注册到 iOS 快捷指令 / App Intents，可在桌面一键启动
+      expose: ["shortcuts"],
       async run(_, { signal }) {
         const target = targetBundle(await readSettings());
         const report: Report = {
